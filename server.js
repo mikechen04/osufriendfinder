@@ -849,33 +849,12 @@ app.post("/admin/wipe-user", requireAuth, async (req, res) => {
     updates[`prefs/${targetId}`] = null;
     updates[`blocks/${targetId}`] = null;
     updates[`inbox/${targetId}`] = null;
+    updates[`wiped/${targetId}`] = true;
 
-    // remove blocks pointing to them (blocks/*/targetId)
-    const blocksSnap = await fdb.ref("blocks").get();
-    const blocksObj = blocksSnap.exists() ? blocksSnap.val() : {};
-    for (const [fromId, map] of Object.entries(blocksObj || {})) {
-      if (!map) continue;
-      if (map && Object.prototype.hasOwnProperty.call(map, targetId)) {
-        updates[`blocks/${fromId}/${targetId}`] = null;
-      }
-    }
-
-    // remove any messages involving them from everyone inbox
-    const inboxSnap = await fdb.ref("inbox").get();
-    const inboxObj = inboxSnap.exists() ? inboxSnap.val() : {};
+    // NOTE: we do NOT scan/delete messages in every inbox here anymore.
+    // that gets huge and times out on bigger databases.
+    // instead we "tombstone" them and hide them in the UI (wiped/{id}=true).
     let inboxDeletes = 0;
-    for (const [toId, msgs] of Object.entries(inboxObj || {})) {
-      if (!msgs) continue;
-      for (const [msgId, msg] of Object.entries(msgs || {})) {
-        if (!msg) continue;
-        const fromId = msg.from_user_id ? String(msg.from_user_id) : "";
-        const toUserId = msg.to_user_id ? String(msg.to_user_id) : "";
-        if (fromId === String(targetId) || toUserId === String(targetId)) {
-          updates[`inbox/${toId}/${msgId}`] = null;
-          inboxDeletes += 1;
-        }
-      }
-    }
 
     // remove reports involving them
     const repSnap = await fdb.ref(`reports/${ADMIN_OSU_ID}`).get();
@@ -890,7 +869,7 @@ app.post("/admin/wipe-user", requireAuth, async (req, res) => {
     // do updates in batches so firebase doesnt choke on huge payloads
     await chunkedUpdate(updates, 400);
 
-    req.session.flash = { type: "ok", message: `wiped user ${targetId} (msgs removed: ${inboxDeletes})` };
+    req.session.flash = { type: "ok", message: `wiped user ${targetId}` };
     return res.redirect("/preferences");
   } catch (e) {
     console.error("wipe user failed", e);
@@ -1118,14 +1097,17 @@ app.get("/inbox", requireAuth, requireProfile, async (req, res) => {
   const userId = String(me.id);
   const fdb = rtdb();
 
-  const [snap, blocksSnap] = await Promise.all([
+  const [snap, blocksSnap, wipedSnap] = await Promise.all([
     fdb.ref(`inbox/${userId}`).get(),
     fdb.ref(`blocks/${userId}`).get(),
+    fdb.ref("wiped").get(),
   ]);
 
   const obj = snap.exists() ? snap.val() : {};
   const blocksObj = blocksSnap.exists() ? blocksSnap.val() : {};
   const blockedIds = new Set(Object.keys(blocksObj || {}));
+  const wipedObj = wipedSnap.exists() ? wipedSnap.val() : {};
+  const wipedIds = new Set(Object.keys(wipedObj || {}));
 
   const messages = Object.values(obj || {});
 
@@ -1137,6 +1119,7 @@ app.get("/inbox", requireAuth, requireProfile, async (req, res) => {
     const otherId = dir === "out" ? String(m.to_user_id || "") : String(m.from_user_id || "");
     if (!otherId) continue;
     if (blockedIds.has(otherId)) continue;
+    if (wipedIds.has(otherId)) continue;
 
     if (!convoMap[otherId]) {
       convoMap[otherId] = {
@@ -1181,6 +1164,12 @@ app.get("/inbox/:otherId", requireAuth, requireProfile, async (req, res) => {
   const blockSnap = await fdb.ref(`blocks/${userId}/${otherId}`).get();
   if (blockSnap.exists()) {
     req.session.flash = { type: "warn", message: "u blocked them" };
+    return res.redirect("/inbox");
+  }
+
+  const wipedSnap = await fdb.ref(`wiped/${otherId}`).get();
+  if (wipedSnap.exists()) {
+    req.session.flash = { type: "warn", message: "user was wiped" };
     return res.redirect("/inbox");
   }
 
