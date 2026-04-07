@@ -9,25 +9,33 @@
   <% } else { %>
     <div class="inbox">
       <% messages.forEach(m => { %>
+        <%
+          const outgoing = m && m.direction === 'out';
+          const whoName = outgoing ? (m.to_username || 'unknown') : (m.from_username || 'unknown');
+          const whoOsu = outgoing ? (m.to_osu_id || m.to_user_id) : m.from_osu_id;
+          const whoAvatar = outgoing ? (m.to_avatar_url || 'https://files.catbox.moe/evvmvg.webp') : (m.from_avatar_url || 'https://files.catbox.moe/evvmvg.webp');
+          const replyTo = outgoing ? m.to_user_id : m.from_user_id;
+        %>
         <div class="msg <%= m.read_at ? 'read' : 'unread' %>">
           <img
             class="avatar smol"
-            src="<%= m.from_avatar_url || 'https://files.catbox.moe/evvmvg.webp' %>"
+            src="<%= whoAvatar %>"
             alt=""
           />
           <div>
             <div class="msg-top">
               <div class="msg-from">
-                <b><%= m.from_username %></b>
+                <%= outgoing ? 'to' : 'from' %>
+                <b><%= whoName %></b>
                 —
-                <a class="softlink" href="https://osu.ppy.sh/users/<%= m.from_osu_id %>" target="_blank" rel="noreferrer">osu!</a>
+                <a class="softlink" href="https://osu.ppy.sh/users/<%= whoOsu %>" target="_blank" rel="noreferrer">osu!</a>
               </div>
               <div class="msg-time"><%= new Date(m.created_at).toLocaleString() %></div>
             </div>
             <div class="msg-body"><%= m.body %></div>
 
             <form class="replybox" action="/message/send" method="post" style="margin-top: 0.65rem">
-              <input type="hidden" name="to_user_id" value="<%= m.from_user_id %>" />
+              <input type="hidden" name="to_user_id" value="<%= replyTo %>" />
               <input type="hidden" name="redirect_to" value="/inbox" />
               <label class="mini-label">reply</label>
               <textarea name="body" rows="2" maxlength="600" placeholder="type a reply..." required></textarea>

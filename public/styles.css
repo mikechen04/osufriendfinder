@@ -163,7 +163,7 @@ a {
   min-width: 1.35rem;
   height: 1.05rem;
   padding: 0 0.35rem;
-  margin-left: 0.35rem;
+  margin-left: 0.18rem;
   border-radius: 999px;
   background: rgba(255, 120, 150, 0.22);
   border: 1px solid rgba(255, 120, 150, 0.35);
@@ -583,9 +583,32 @@ button.btn {
 }
 
 .stack-item p {
-  margin: 0;
+  margin: 0 0 0.75rem;
   color: var(--muted);
   font-size: 0.95rem;
+}
+
+.stack-item form {
+  margin-top: 0.4rem;
+}
+
+.check-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.9rem;
+  margin-top: 0.35rem;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.check input {
+  accent-color: var(--pink);
 }
 
 .divider {

@@ -6,6 +6,19 @@
 
   <form action="/profile" method="post" class="form">
     <div class="form-row">
+      <label for="display_name">display name (optional)</label>
+      <input
+        id="display_name"
+        name="display_name"
+        type="text"
+        maxlength="40"
+        placeholder="ex: mike / aheriez / whatever"
+        value="<%= me && me.display_name ? me.display_name : '' %>"
+      />
+      <div class="hint">shown on your profile view page</div>
+    </div>
+
+    <div class="form-row">
       <label for="age">age</label>
       <input
         id="age"

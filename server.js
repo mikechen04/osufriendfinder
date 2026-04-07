@@ -58,6 +58,7 @@ app.use(async (req, res, next) => {
   try {
     res.locals.me = null;
     res.locals.inboxUnread = null;
+    res.locals.prefs = null;
 
     if (req.session && req.session.userId) {
       const userId = String(req.session.userId);
@@ -66,10 +67,12 @@ app.use(async (req, res, next) => {
       const userSnap = await fdb.ref(`users/${userId}`).get();
       const profileSnap = await fdb.ref(`profiles/${userId}`).get();
       const inboxSnap = await fdb.ref(`inbox/${userId}`).get();
+      const prefsSnap = await fdb.ref(`prefs/${userId}`).get();
 
       const user = userSnap.exists() ? userSnap.val() : null;
       const profile = profileSnap.exists() ? profileSnap.val() : null;
       const inboxObj = inboxSnap.exists() ? inboxSnap.val() : {};
+      const prefs = prefsSnap.exists() ? prefsSnap.val() : null;
 
       if (user) {
         res.locals.me = {
@@ -82,7 +85,9 @@ app.use(async (req, res, next) => {
           bio: profile ? profile.bio : null,
           gender: profile ? profile.gender : null,
           discord: profile ? profile.discord : null,
+          display_name: profile ? profile.display_name : null,
         };
+        res.locals.prefs = prefs;
 
         // count unread messages
         let unread = 0;
@@ -238,6 +243,51 @@ app.get("/preferences", requireAuth, (req, res) => {
   res.render("pages/preferences", { title: "preferences" });
 });
 
+app.post("/preferences", requireAuth, async (req, res) => {
+  // simple filters. leaving stuff blank means "no preference"
+  const minAgeRaw = (req.body.pref_min_age || "").toString().trim();
+  const maxAgeRaw = (req.body.pref_max_age || "").toString().trim();
+  const gendersRaw = req.body.pref_genders;
+
+  const minAge = minAgeRaw ? parseInt(minAgeRaw, 10) : null;
+  const maxAge = maxAgeRaw ? parseInt(maxAgeRaw, 10) : null;
+
+  let genders = [];
+  if (Array.isArray(gendersRaw)) genders = gendersRaw.map(x => String(x));
+  else if (typeof gendersRaw === "string" && gendersRaw) genders = [gendersRaw];
+  genders = genders.filter(g => GENDERS.includes(g));
+
+  if (minAge !== null && (!Number.isFinite(minAge) || minAge < 18 || minAge > 120)) {
+    req.session.flash = { type: "error", message: "min age has to be 18-120 (or leave blank)" };
+    return res.redirect("/preferences");
+  }
+  if (maxAge !== null && (!Number.isFinite(maxAge) || maxAge < 18 || maxAge > 120)) {
+    req.session.flash = { type: "error", message: "max age has to be 18-120 (or leave blank)" };
+    return res.redirect("/preferences");
+  }
+  if (minAge !== null && maxAge !== null && minAge > maxAge) {
+    req.session.flash = { type: "error", message: "min age cant be bigger than max age" };
+    return res.redirect("/preferences");
+  }
+
+  const now = Date.now();
+  const userId = String(req.session.userId);
+  try {
+    await rtdb().ref(`prefs/${userId}`).set({
+      min_age: minAge,
+      max_age: maxAge,
+      genders,
+      updated_at: now,
+    });
+    req.session.flash = { type: "ok", message: "preferences saved" };
+    return res.redirect("/preferences");
+  } catch (e) {
+    console.error(e);
+    req.session.flash = { type: "error", message: "failed to save preferences" };
+    return res.redirect("/preferences");
+  }
+});
+
 app.get("/profile", requireAuth, (req, res) => {
   res.render("pages/profile_view", { title: "profile" });
 });
@@ -251,11 +301,13 @@ app.post("/profile", requireAuth, async (req, res) => {
   const bioRaw = (req.body.bio || "").toString().trim();
   const genderRaw = (req.body.gender || "").toString().trim();
   const discordRaw = (req.body.discord || "").toString().trim();
+  const displayNameRaw = (req.body.display_name || "").toString().trim();
 
   const age = parseInt(ageRaw, 10);
   const bio = bioRaw.slice(0, 400);
   const gender = GENDERS.includes(genderRaw) ? genderRaw : null;
   const discord = discordRaw.slice(0, 64);
+  const displayName = displayNameRaw.slice(0, 40);
 
   if (!Number.isFinite(age)) {
     req.session.flash = { type: "error", message: "age has to be a number" };
@@ -289,7 +341,14 @@ app.post("/profile", requireAuth, async (req, res) => {
   const now = Date.now();
   const userId = String(req.session.userId);
   try {
-    await rtdb().ref(`profiles/${userId}`).set({ age, bio, gender, discord: discord || null, updated_at: now });
+    await rtdb().ref(`profiles/${userId}`).set({
+      age,
+      bio,
+      gender,
+      discord: discord || null,
+      display_name: displayName || null,
+      updated_at: now,
+    });
     req.session.flash = { type: "ok", message: "profile saved" };
     return res.redirect("/browse");
   } catch (e) {
@@ -302,6 +361,7 @@ app.post("/profile", requireAuth, async (req, res) => {
 app.get("/browse", requireAuth, async (req, res) => {
   const me = res.locals.me;
   const fdb = rtdb();
+  const prefs = res.locals.prefs || null;
 
   const [usersSnap, profilesSnap] = await Promise.all([
     fdb.ref("users").get(),
@@ -331,8 +391,23 @@ app.get("/browse", requireAuth, async (req, res) => {
     });
   }
 
-  out.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
-  res.render("pages/browse", { title: "browse", users: out.slice(0, 50) });
+  // apply your preferences if set
+  let filtered = out;
+  if (prefs) {
+    filtered = out.filter(u => {
+      if (!u) return false;
+      if (!u.age || !u.gender) return false;
+      if (prefs.min_age !== null && typeof prefs.min_age === "number" && u.age < prefs.min_age) return false;
+      if (prefs.max_age !== null && typeof prefs.max_age === "number" && u.age > prefs.max_age) return false;
+      if (Array.isArray(prefs.genders) && prefs.genders.length > 0) {
+        if (!prefs.genders.includes(u.gender)) return false;
+      }
+      return true;
+    });
+  }
+
+  filtered.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
+  res.render("pages/browse", { title: "browse", users: filtered.slice(0, 50) });
 });
 
 app.post("/account/destroy", requireAuth, async (req, res) => {
@@ -404,16 +479,38 @@ app.post("/message/send", requireAuth, requireProfile, async (req, res) => {
   }
 
   const now = Date.now();
+  // store in their inbox (incoming)
   const msgRef = fdb.ref(`inbox/${toUserId}`).push();
   await msgRef.set({
     id: msgRef.key,
+    direction: "in",
     from_user_id: String(me.id),
     from_username: me.username,
     from_osu_id: me.osu_id,
     from_avatar_url: me.avatar_url || null,
+    to_user_id: String(toUserId),
     body,
     created_at: now,
     read_at: null,
+  });
+
+  // also store a copy in your inbox (outgoing) so u can see what u sent
+  const toUser = toUserSnap.val() || {};
+  const myCopyRef = fdb.ref(`inbox/${String(me.id)}`).push();
+  await myCopyRef.set({
+    id: myCopyRef.key,
+    direction: "out",
+    from_user_id: String(me.id),
+    from_username: me.username,
+    from_osu_id: me.osu_id,
+    from_avatar_url: me.avatar_url || null,
+    to_user_id: String(toUserId),
+    to_username: toUser.username || "unknown",
+    to_osu_id: toUser.osu_id || null,
+    to_avatar_url: toUser.avatar_url || null,
+    body,
+    created_at: now,
+    read_at: now, // dont count as unread for you
   });
 
   req.session.flash = { type: "ok", message: "message sent" };

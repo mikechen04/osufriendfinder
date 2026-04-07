@@ -6,6 +6,74 @@
 
   <div class="stack-section">
     <div class="stack-item">
+      <h3>dating preferences</h3>
+      <p>this just filters who shows up on browse</p>
+
+      <form action="/preferences" method="post" class="form" style="margin-top: 0.75rem">
+        <%
+          // use res.locals.prefs (express makes it available as `prefs` here)
+          const p = (typeof prefs !== "undefined" ? prefs : null);
+          const minAge = p && typeof p.min_age === "number" ? p.min_age : "";
+          const maxAge = p && typeof p.max_age === "number" ? p.max_age : "";
+          const genders = p && Array.isArray(p.genders) ? p.genders : [];
+        %>
+
+        <div class="form-row">
+          <label for="pref_min_age">preferred min age</label>
+          <input
+            id="pref_min_age"
+            name="pref_min_age"
+            type="number"
+            min="18"
+            max="120"
+            placeholder="leave blank"
+            value="<%= minAge %>"
+          />
+          <div class="hint">blank = no min age filter</div>
+        </div>
+
+        <div class="form-row">
+          <label for="pref_max_age">preferred max age</label>
+          <input
+            id="pref_max_age"
+            name="pref_max_age"
+            type="number"
+            min="18"
+            max="120"
+            placeholder="leave blank"
+            value="<%= maxAge %>"
+          />
+          <div class="hint">blank = no max age filter</div>
+        </div>
+
+        <div class="form-row">
+          <label>preferred genders</label>
+          <div class="check-row">
+            <label class="check">
+              <input type="checkbox" name="pref_genders" value="male" <%= genders.includes("male") ? "checked" : "" %> />
+              <span>male</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" name="pref_genders" value="female" <%= genders.includes("female") ? "checked" : "" %> />
+              <span>female</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" name="pref_genders" value="enby" <%= genders.includes("enby") ? "checked" : "" %> />
+              <span>enby</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" name="pref_genders" value="other" <%= genders.includes("other") ? "checked" : "" %> />
+              <span>other</span>
+            </label>
+          </div>
+          <div class="hint">if u dont check anything, it wont filter gender</div>
+        </div>
+
+        <button class="btn tiny" type="submit">save preferences</button>
+      </form>
+    </div>
+
+    <div class="stack-item">
       <h3>profile</h3>
       <p>edit ur info + discord + all that</p>
       <a class="btn tiny" href="/profile">open profile</a>

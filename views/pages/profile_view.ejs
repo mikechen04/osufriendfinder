@@ -14,7 +14,10 @@
     <div class="profile-block">
       <img class="avatar big" src="<%= me.avatar_url || 'https://files.catbox.moe/evvmvg.webp' %>" alt="" />
       <div>
-        <div class="user-name"><%= me.username %></div>
+        <div class="user-name"><%= me.display_name || me.username %></div>
+        <% if (me.display_name && me.display_name !== me.username) { %>
+          <div class="muted" style="margin-top: 0.15rem">osu: <%= me.username %></div>
+        <% } %>
         <div class="user-sub">
           <span class="tag"><%= me.age %>+</span>
           <span class="tag"><%= me.gender %></span>
@@ -26,7 +29,10 @@
       </div>
     </div>
 
-    <div class="bio big"><%= me.bio %></div>
+    <div class="stack-item" style="margin-top: 0.85rem">
+      <h3>bio</h3>
+      <p><%= me.bio %></p>
+    </div>
 
     <% if (me.discord) { %>
       <div class="stack-item" style="margin-top: 0.85rem">
