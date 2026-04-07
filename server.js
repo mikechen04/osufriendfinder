@@ -12,6 +12,9 @@ const { osuAuthorizeUrl, osuExchangeCodeForToken, osuGetMe } = require("./osu");
 const app = express();
 const db = getDb();
 
+// cloud run / reverse proxy — needed so cookies + req.ip work behind https
+app.set("trust proxy", 1);
+
 const PORT = process.env.PORT || 3000;
 const GENDERS = ["male", "female", "enby", "other"];
 
@@ -324,7 +327,7 @@ app.get("/inbox", requireAuth, requireProfile, (req, res) => {
   res.render("pages/inbox", { title: "inbox", messages });
 });
 
-app.listen(PORT, () => {
-  console.log(`server running on http://localhost:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`server running on port ${PORT}`);
 });
 
