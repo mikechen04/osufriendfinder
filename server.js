@@ -126,6 +126,55 @@ function hasSlur(text) {
   return SLUR_RE.test(String(text || ""));
 }
 
+// admin: search all dms for a substring (dedupe in+out copies of same send)
+async function adminSearchInboxMessages(keyword) {
+  const q = String(keyword || "")
+    .trim()
+    .toLowerCase();
+  if (q.length < 2) {
+    return { matches: [], truncated: false, error: "use at least 2 characters" };
+  }
+  const fdb = rtdb();
+  const snap = await fdb.ref("inbox").get();
+  if (!snap.exists()) {
+    return { matches: [], truncated: false, error: null };
+  }
+  const all = snap.val();
+  const seen = new Set();
+  const matches = [];
+  for (const [inboxOwnerId, msgs] of Object.entries(all || {})) {
+    if (!msgs || typeof msgs !== "object") continue;
+    for (const [msgId, m] of Object.entries(msgs)) {
+      if (!m || m.body == null) continue;
+      const body = String(m.body);
+      if (!body.toLowerCase().includes(q)) continue;
+      const dedupeKey = `${m.created_at}|${m.from_user_id}|${m.to_user_id}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      matches.push({
+        msg_id: msgId,
+        inbox_owner_id: String(inboxOwnerId),
+        body,
+        created_at: m.created_at || 0,
+        direction: m.direction || "",
+        from_user_id: m.from_user_id ? String(m.from_user_id) : "",
+        from_username: m.from_username || "unknown",
+        from_osu_id: m.from_osu_id || null,
+        to_user_id: m.to_user_id ? String(m.to_user_id) : "",
+        to_username: m.to_username || null,
+        to_osu_id: m.to_osu_id || null,
+      });
+    }
+  }
+  matches.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+  let truncated = false;
+  if (matches.length > 200) {
+    truncated = true;
+    matches.splice(200);
+  }
+  return { matches, truncated, error: null };
+}
+
 async function createAutoReport({ me, toUserId, toUser, where, text }) {
   const body = String(text || "").slice(0, 500);
   const now = Date.now();
@@ -1034,6 +1083,42 @@ app.post("/admin/wipe-user", requireAuth, async (req, res) => {
     console.error("wipe user failed", e);
     req.session.flash = { type: "error", message: "failed to wipe user" };
     return res.redirect("/preferences");
+  }
+});
+
+app.get("/admin/messages", requireAuth, async (req, res) => {
+  const me = res.locals.me;
+  if (!isAdmin(me)) return res.redirect("/");
+
+  const rawQ = String(req.query.q || "").trim();
+  if (!rawQ) {
+    return res.render("pages/admin_message_search", {
+      title: "admin · messages",
+      keyword: "",
+      matches: [],
+      truncated: false,
+      error: null,
+    });
+  }
+
+  try {
+    const { matches, truncated, error } = await adminSearchInboxMessages(rawQ);
+    return res.render("pages/admin_message_search", {
+      title: "admin · messages",
+      keyword: rawQ,
+      matches,
+      truncated,
+      error,
+    });
+  } catch (e) {
+    console.error(e);
+    return res.render("pages/admin_message_search", {
+      title: "admin · messages",
+      keyword: rawQ,
+      matches: [],
+      truncated: false,
+      error: "search failed (check server logs)",
+    });
   }
 });
 

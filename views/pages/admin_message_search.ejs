@@ -1,0 +1,56 @@
+<%- include("../partials/head", { title }) %>
+
+<section class="card">
+  <p class="est">admin</p>
+  <h1 class="h1">message search</h1>
+
+  <a class="btn tiny ghost" href="/preferences">back to preferences</a>
+
+  <div class="divider">✿</div>
+
+  <form action="/admin/messages" method="get" class="form" style="margin-top: 0.75rem">
+    <div class="form-row">
+      <label for="q">keyword (2+ chars)</label>
+      <input id="q" name="q" type="text" maxlength="80" value="<%= keyword ? keyword : "" %>" placeholder="search in all inboxes" minlength="2" />
+    </div>
+    <button class="btn tiny" type="submit">search</button>
+  </form>
+
+  <% if (error) { %>
+    <p class="flash error" style="margin-top: 1rem"><%= error %></p>
+  <% } %>
+
+  <% if (keyword && !error && matches && matches.length === 0) { %>
+    <p class="muted" style="margin-top: 1rem">no matches</p>
+  <% } %>
+
+  <% if (truncated) { %>
+    <p class="muted" style="margin-top: 1rem">showing first 200 matches (there may be more)</p>
+  <% } %>
+
+  <% if (matches && matches.length > 0) { %>
+    <div class="stack-section" style="margin-top: 1rem">
+      <% matches.forEach(row => { %>
+        <div class="stack-item" style="margin: 0 0 1rem">
+          <div class="muted" style="font-size: 0.85rem">
+            <%= new Date(row.created_at || Date.now()).toLocaleString() %>
+            <% if (row.direction) { %>
+              · <%= row.direction %>
+            <% } %>
+          </div>
+          <div style="margin-top: 0.35rem; font-weight: 800">
+            <a class="softlink" href="/admin/view-profile?q=<%= encodeURIComponent(row.from_user_id) %>"><%= row.from_username %></a>
+            <span class="muted">→</span>
+            <a class="softlink" href="/admin/view-profile?q=<%= encodeURIComponent(row.to_user_id) %>"><%= row.to_username || row.to_user_id || "?" %></a>
+          </div>
+          <div class="muted" style="margin-top: 0.2rem; font-size: 0.8rem">
+            msg in inbox folder of user id <%= row.inbox_owner_id %>
+          </div>
+          <div class="msg-body" style="margin-top: 0.5rem; white-space: pre-wrap"><%= row.body %></div>
+        </div>
+      <% }) %>
+    </div>
+  <% } %>
+</section>
+
+<%- include("../partials/foot") %>
