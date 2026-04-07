@@ -591,9 +591,9 @@ app.get("/browse", requireAuthOrGuest, async (req, res) => {
     }
   }
 
-  // normal users get 100. special user gets everyone.
+  // normal users get 50. special user gets everyone.
   const isAllAccess = me && String(me.osu_id) === "9632648";
-  const list = isAllAccess ? filtered : filtered.slice(0, 100);
+  const list = isAllAccess ? filtered : filtered.slice(0, 50);
   res.render("pages/browse", { title: "browse", users: list });
 });
 
