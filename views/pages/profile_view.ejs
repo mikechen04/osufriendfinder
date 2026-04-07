@@ -46,6 +46,25 @@
       </div>
     <% } %>
 
+    <div class="stack-item" style="margin-top: 0.85rem">
+      <h3>looking for:</h3>
+      <%
+        const p = (typeof prefs !== "undefined" ? prefs : null);
+        const minAge = p && typeof p.min_age === "number" ? p.min_age : null;
+        const maxAge = p && typeof p.max_age === "number" ? p.max_age : null;
+        const genders = p && Array.isArray(p.genders) ? p.genders : [];
+
+        let ageLine = "any age";
+        if (minAge != null && maxAge != null) ageLine = `${minAge}-${maxAge}`;
+        else if (minAge != null) ageLine = `${minAge}+`;
+        else if (maxAge != null) ageLine = `up to ${maxAge}`;
+
+        let genderLine = "any gender";
+        if (genders.length) genderLine = genders.join(", ");
+      %>
+      <p><%= ageLine %> · <%= genderLine %></p>
+    </div>
+
     <div class="divider">✿</div>
 
     <a class="btn" href="/profile/edit">edit profile</a>

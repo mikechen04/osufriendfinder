@@ -9,20 +9,28 @@
   <% } else { %>
     <div class="inbox">
       <% convos.forEach(c => { %>
-        <a class="msg <%= c.unread > 0 ? 'unread' : 'read' %>" href="/inbox/<%= c.otherId %>?view=both" style="text-decoration: none">
-          <img class="avatar smol" src="<%= c.avatar_url || 'https://files.catbox.moe/evvmvg.webp' %>" alt="" />
-          <div>
-            <div class="msg-top">
-              <div class="msg-from">
-                <b><%= c.name %></b>
-                —
-                <span class="muted"><%= c.unread > 0 ? (c.unread + ' unread') : 'no unread' %></span>
+        <div class="msg msg--row <%= c.unread > 0 ? 'unread' : 'read' %>">
+          <a class="msg-link" href="/inbox/<%= c.otherId %>?view=both">
+            <img class="avatar smol" src="<%= c.avatar_url || 'https://files.catbox.moe/evvmvg.webp' %>" alt="" />
+            <div>
+              <div class="msg-top">
+                <div class="msg-from">
+                  <b><%= c.name %></b>
+                  —
+                  <span class="muted"><%= c.unread > 0 ? (c.unread + ' unread') : 'no unread' %></span>
+                </div>
+                <div class="msg-time"><%= new Date(c.last_at).toLocaleString() %></div>
               </div>
-              <div class="msg-time"><%= new Date(c.last_at).toLocaleString() %></div>
+              <div class="msg-body"><%= c.last_body %></div>
             </div>
-            <div class="msg-body"><%= c.last_body %></div>
-          </div>
-        </a>
+          </a>
+
+          <form action="/block" method="post" class="msg-actions">
+            <input type="hidden" name="block_user_id" value="<%= c.otherId %>" />
+            <input type="hidden" name="redirect_to" value="/inbox" />
+            <button class="btn tiny danger" type="submit">block</button>
+          </form>
+        </div>
       <% }) %>
     </div>
   <% } %>

@@ -796,6 +796,97 @@ app.post("/admin/cleanup-bios", requireAuth, async (req, res) => {
   }
 });
 
+app.post("/admin/wipe-user", requireAuth, async (req, res) => {
+  const me = res.locals.me;
+  if (!me || String(me.osu_id) !== ADMIN_OSU_ID) return res.redirect("/");
+
+  const q = (req.body.q || "").toString().trim();
+  if (!q) return res.redirect("/preferences");
+
+  try {
+    const fdb = rtdb();
+
+    const usersSnap = await fdb.ref("users").get();
+    const usersObj = usersSnap.exists() ? usersSnap.val() : {};
+
+    // find target id: either exact id, or username match (case-insensitive)
+    let targetId = null;
+    if (usersObj && usersObj[q]) {
+      targetId = String(q);
+    } else {
+      const qLower = q.toLowerCase();
+      for (const [id, u] of Object.entries(usersObj || {})) {
+        if (!u || !u.username) continue;
+        if (String(u.username).toLowerCase() === qLower) {
+          targetId = String(id);
+          break;
+        }
+      }
+    }
+
+    if (!targetId) {
+      req.session.flash = { type: "error", message: "user not found" };
+      return res.redirect("/preferences");
+    }
+
+    if (String(targetId) === ADMIN_OSU_ID) {
+      req.session.flash = { type: "error", message: "cant wipe admin" };
+      return res.redirect("/preferences");
+    }
+
+    const updates = {};
+    updates[`users/${targetId}`] = null;
+    updates[`profiles/${targetId}`] = null;
+    updates[`prefs/${targetId}`] = null;
+    updates[`blocks/${targetId}`] = null;
+    updates[`inbox/${targetId}`] = null;
+
+    // remove blocks pointing to them (blocks/*/targetId)
+    const blocksSnap = await fdb.ref("blocks").get();
+    const blocksObj = blocksSnap.exists() ? blocksSnap.val() : {};
+    for (const [fromId, map] of Object.entries(blocksObj || {})) {
+      if (!map) continue;
+      if (map && Object.prototype.hasOwnProperty.call(map, targetId)) {
+        updates[`blocks/${fromId}/${targetId}`] = null;
+      }
+    }
+
+    // remove any messages involving them from everyone inbox
+    const inboxSnap = await fdb.ref("inbox").get();
+    const inboxObj = inboxSnap.exists() ? inboxSnap.val() : {};
+    for (const [toId, msgs] of Object.entries(inboxObj || {})) {
+      if (!msgs) continue;
+      for (const [msgId, msg] of Object.entries(msgs || {})) {
+        if (!msg) continue;
+        const fromId = msg.from_user_id ? String(msg.from_user_id) : "";
+        const toUserId = msg.to_user_id ? String(msg.to_user_id) : "";
+        if (fromId === String(targetId) || toUserId === String(targetId)) {
+          updates[`inbox/${toId}/${msgId}`] = null;
+        }
+      }
+    }
+
+    // remove reports involving them
+    const repSnap = await fdb.ref(`reports/${ADMIN_OSU_ID}`).get();
+    const repObj = repSnap.exists() ? repSnap.val() : {};
+    for (const [rid, r] of Object.entries(repObj || {})) {
+      if (!r) continue;
+      if (String(r.from_user_id || "") === String(targetId) || String(r.to_user_id || "") === String(targetId)) {
+        updates[`reports/${ADMIN_OSU_ID}/${rid}`] = null;
+      }
+    }
+
+    await fdb.ref().update(updates);
+
+    req.session.flash = { type: "ok", message: `wiped user ${targetId}` };
+    return res.redirect("/preferences");
+  } catch (e) {
+    console.error(e);
+    req.session.flash = { type: "error", message: "failed to wipe user" };
+    return res.redirect("/preferences");
+  }
+});
+
 app.get("/browse", requireAuthOrGuest, async (req, res) => {
   const me = res.locals.me;
   const fdb = rtdb();

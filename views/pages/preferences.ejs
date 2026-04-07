@@ -134,6 +134,18 @@
       </div>
 
       <div class="stack-item">
+        <h3>wipe user</h3>
+        <p>type osu id or username. this deletes them everywhere (be careful)</p>
+        <form action="/admin/wipe-user" method="post" class="form" style="margin-top: 0.75rem" onsubmit="return confirm('wipe this user completely?')">
+          <div class="form-row">
+            <label for="wipe_q">osu id or username</label>
+            <input id="wipe_q" name="q" type="text" maxlength="64" placeholder="id or username" required />
+          </div>
+          <button class="btn tiny danger" type="submit">wipe user</button>
+        </form>
+      </div>
+
+      <div class="stack-item">
         <h3>reports</h3>
         <p>stuff ppl report (from the browse page)</p>
 
