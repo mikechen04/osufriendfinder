@@ -308,7 +308,7 @@ app.get("/auth/osu/callback", async (req, res) => {
     console.error(err);
     req.session.flash = {
       type: "error",
-      message: "osu! login failed. check your .env values + redirect url",
+      message: "osu! login failed. too much traffic on the server just wait or try again",
     };
     return res.redirect("/");
   }
