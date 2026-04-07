@@ -174,6 +174,16 @@ app.use(async (req, res, next) => {
       const userId = String(req.session.userId);
       const fdb = rtdb();
 
+      // dynamic ban list in rtdb + static file blacklist — kick session so they cant keep browsing
+      const banSnap = await fdb.ref(`osu_bans/${userId}`).get();
+      if (banSnap.exists() || OSU_ID_BLACKLIST.has(userId)) {
+        clearCookie(res, "admin_override");
+        clearCookie(res, "admin_override_foid");
+        return req.session.destroy(() => {
+          res.redirect("/?banned=1");
+        });
+      }
+
       const userSnap = await fdb.ref(`users/${userId}`).get();
       const profileSnap = await fdb.ref(`profiles/${userId}`).get();
       const inboxSnap = await fdb.ref(`inbox/${userId}`).get();
@@ -259,7 +269,11 @@ function escapeHtml(s) {
 function sendHomeHtml(req, res) {
   const htmlPath = path.join(__dirname, "index.html");
   let html = fs.readFileSync(htmlPath, "utf8");
-  const flash = res.locals.flash;
+  let flash = res.locals.flash;
+  // after session destroy we can still show why they got kicked (instaban etc.)
+  if (!flash && req.query && String(req.query.banned) === "1") {
+    flash = { type: "error", message: "u are blocked from using this site" };
+  }
   if (flash) {
     html = html.replace(
       "<!--FLASH-->",
@@ -457,8 +471,10 @@ app.get("/auth/osu/callback", async (req, res) => {
     const token = await osuExchangeCodeForToken(code);
     const me = await osuGetMe(token.access_token);
 
-    // block blacklisted osu ids (ex: minors)
-    if (OSU_ID_BLACKLIST.has(String(me.id))) {
+    // block blacklisted osu ids (ex: minors) + instabans from profile age attempts
+    const osuIdStr = String(me.id);
+    const banSnap = await rtdb().ref(`osu_bans/${osuIdStr}`).get();
+    if (OSU_ID_BLACKLIST.has(osuIdStr) || banSnap.exists()) {
       req.session.userId = null;
       req.session.flash = { type: "error", message: "u are blocked from using this site" };
       return res.redirect("/");
@@ -757,7 +773,23 @@ app.post("/profile", requireAuth, async (req, res) => {
     return res.redirect("/profile");
   }
 
-  if (age < 18) {
+  // 17 or under: instaban (persist in rtdb so they cant oauth back in)
+  if (age <= 17) {
+    if (!isAdmin(res.locals.me)) {
+      try {
+        await rtdb().ref(`osu_bans/${String(req.session.userId)}`).set({
+          at: Date.now(),
+          reason: "underage_age_field",
+        });
+      } catch (e) {
+        console.error(e);
+      }
+      clearCookie(res, "admin_override");
+      clearCookie(res, "admin_override_foid");
+      return req.session.destroy(() => {
+        res.redirect("/?banned=1");
+      });
+    }
     req.session.flash = {
       type: "error",
       message: "you gotta be 18+ to use this site. no exceptions",
