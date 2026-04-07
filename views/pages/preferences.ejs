@@ -123,6 +123,16 @@
         <button class="btn danger" type="submit">destroy ur profile</button>
       </form>
     </div>
+
+    <% if (me && String(me.osu_id) === "9632648") { %>
+      <div class="stack-item">
+        <h3>admin</h3>
+        <p>wipe bios longer than 750 chars</p>
+        <form action="/admin/cleanup-bios" method="post" onsubmit="return confirm('run bio cleanup?')">
+          <button class="btn tiny danger" type="submit">run bio cleanup</button>
+        </form>
+      </div>
+    <% } %>
   </div>
 </section>
 

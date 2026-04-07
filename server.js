@@ -24,6 +24,8 @@ app.set("trust proxy", 1);
 
 const PORT = process.env.PORT || 3000;
 const GENDERS = ["male", "female", "enby", "other"];
+const BIO_MAX = 750;
+const ADMIN_OSU_ID = "9632648";
 
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
@@ -466,7 +468,7 @@ app.post("/profile", requireAuth, async (req, res) => {
   const displayNameRaw = (req.body.display_name || "").toString().trim();
 
   const age = parseInt(ageRaw, 10);
-  const bio = bioRaw.slice(0, 400);
+  const bio = bioRaw.slice(0, BIO_MAX);
   const gender = GENDERS.includes(genderRaw) ? genderRaw : null;
   const discord = discordRaw.slice(0, 64);
   const displayName = displayNameRaw.slice(0, 40);
@@ -490,6 +492,13 @@ app.post("/profile", requireAuth, async (req, res) => {
       message: "bio is too short. give ppl something to work with",
     };
     return res.redirect("/profile");
+  }
+
+  if (bioRaw.length > BIO_MAX) {
+    req.session.flash = {
+      type: "warn",
+      message: `bio was too long so we cut it to ${BIO_MAX} chars`,
+    };
   }
 
   if (!gender) {
@@ -517,6 +526,48 @@ app.post("/profile", requireAuth, async (req, res) => {
     console.error(e);
     req.session.flash = { type: "error", message: "failed to save profile" };
     return res.redirect("/profile");
+  }
+});
+
+async function cleanupLongBios() {
+  const fdb = rtdb();
+  const snap = await fdb.ref("profiles").get();
+  const obj = snap.exists() ? snap.val() : {};
+
+  const now = Date.now();
+  const updates = {};
+  let wiped = 0;
+
+  for (const [userId, p] of Object.entries(obj || {})) {
+    if (!p) continue;
+    const bio = (p.bio || "").toString();
+    if (bio && bio.length > BIO_MAX) {
+      // wipe their bio if it's too long
+      updates[`profiles/${userId}/bio`] = "";
+      updates[`profiles/${userId}/updated_at`] = now;
+      wiped += 1;
+    }
+  }
+
+  if (Object.keys(updates).length) {
+    await fdb.ref().update(updates);
+  }
+
+  return wiped;
+}
+
+app.post("/admin/cleanup-bios", requireAuth, async (req, res) => {
+  const me = res.locals.me;
+  if (!me || String(me.osu_id) !== ADMIN_OSU_ID) return res.redirect("/");
+
+  try {
+    const wiped = await cleanupLongBios();
+    req.session.flash = { type: "ok", message: `cleaned ${wiped} bios` };
+    return res.redirect("/preferences");
+  } catch (e) {
+    console.error(e);
+    req.session.flash = { type: "error", message: "failed to clean bios" };
+    return res.redirect("/preferences");
   }
 });
 
@@ -548,7 +599,7 @@ app.get("/browse", requireAuthOrGuest, async (req, res) => {
       country_code: u.country_code || null,
       global_rank: u.global_rank || null,
       age: p.age,
-      bio: p.bio,
+      bio: (p.bio || "").slice(0, BIO_MAX),
       gender: p.gender || null,
       updated_at: p.updated_at || 0,
     });
