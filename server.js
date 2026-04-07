@@ -600,6 +600,7 @@ app.get("/browse", requireAuthOrGuest, async (req, res) => {
   const me = res.locals.me;
   const fdb = rtdb();
   const prefs = res.locals.prefs || null;
+  const isAllAccess = me && String(me.osu_id) === "9632648";
 
   const [usersSnap, profilesSnap] = await Promise.all([
     fdb.ref("users").get(),
@@ -632,7 +633,7 @@ app.get("/browse", requireAuthOrGuest, async (req, res) => {
 
   // remove blocked users
   let baseList = out;
-  if (me) {
+  if (me && !isAllAccess) {
     const blocksSnap = await fdb.ref(`blocks/${String(me.id)}`).get();
     const blocksObj = blocksSnap.exists() ? blocksSnap.val() : {};
     const blockedIds = new Set(Object.keys(blocksObj || {}));
@@ -641,7 +642,7 @@ app.get("/browse", requireAuthOrGuest, async (req, res) => {
 
   // apply your preferences if set
   let filtered = baseList;
-  if (prefs) {
+  if (prefs && !isAllAccess) {
     filtered = baseList.filter(u => {
       if (!u) return false;
       if (!u.age || !u.gender) return false;
@@ -668,7 +669,6 @@ app.get("/browse", requireAuthOrGuest, async (req, res) => {
   }
 
   // normal users get 50. special user gets everyone.
-  const isAllAccess = me && String(me.osu_id) === "9632648";
   const list = isAllAccess ? filtered : filtered.slice(0, 50);
   res.render("pages/browse", { title: "browse", users: list });
 });
