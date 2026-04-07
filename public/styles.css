@@ -208,6 +208,10 @@ a {
   backdrop-filter: blur(6px);
 }
 
+.modal-backdrop[hidden] {
+  display: none;
+}
+
 .modal {
   width: min(560px, 96vw);
   background: rgba(255, 255, 255, 0.9);
