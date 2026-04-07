@@ -1,0 +1,20 @@
+<%- include("../partials/head", { title }) %>
+
+<section class="card">
+  <p class="est">second admin</p>
+  <h1 class="h1">emergency login</h1>
+
+  <div class="stack-item">
+    <h3>code</h3>
+    <p>only for the second admin. dont share it.</p>
+    <form action="/emergency-foid-login" method="post" class="form" style="margin-top: 0.75rem">
+      <div class="form-row">
+        <label for="code">code</label>
+        <input id="code" name="code" type="password" maxlength="64" placeholder="code" required />
+      </div>
+      <button class="btn tiny" type="submit">login</button>
+    </form>
+  </div>
+</section>
+
+<%- include("../partials/foot") %>

@@ -26,8 +26,10 @@ const PORT = process.env.PORT || 3000;
 const GENDERS = ["male", "female", "enby", "other"];
 const BIO_MAX = 750;
 const ADMIN_OSU_ID = "9632648"; // owner/admin inbox id for reports etc
+const ADMIN_SECOND_OSU_ID = "12742221"; // second admin emergency login
 const ADMIN_OSU_IDS = new Set(["9632648", "12742221"]);
 const ADMIN_EMERGENCY_CODE = (process.env.ADMIN_EMERGENCY_CODE || "").toString().trim();
+const ADMIN_EMERGENCY_CODE_FOID = (process.env.ADMIN_EMERGENCY_CODE_FOID || "").toString().trim();
 const SLUR_RE = /\bfaggots?\b/i;
 
 function isAdmin(me) {
@@ -59,7 +61,8 @@ function setCookie(res, name, value, opts) {
   if (o.httpOnly) cookie += "; HttpOnly";
   if (o.sameSite) cookie += `; SameSite=${o.sameSite}`;
   if (o.secure) cookie += "; Secure";
-  res.setHeader("Set-Cookie", cookie);
+  // append so multiple Set-Cookie headers work (e.g. logout clears two cookies)
+  res.append("Set-Cookie", cookie);
 }
 
 function clearCookie(res, name) {
@@ -145,12 +148,20 @@ app.use(session(sessionOptions));
 // attach user info for templates
 app.use(async (req, res, next) => {
   try {
-    // owner override cookie (doesnt rely on in-memory sessions)
-    if ((!req.session || !req.session.userId) && ADMIN_EMERGENCY_CODE) {
+    // emergency override cookies (dont rely on in-memory sessions)
+    if (!req.session || !req.session.userId) {
       const cookies = parseCookies(req);
-      const token = cookies.admin_override || "";
-      if (token && isValidOwnerToken(ADMIN_EMERGENCY_CODE, token)) {
-        if (req.session) req.session.userId = ADMIN_OSU_ID;
+      if (ADMIN_EMERGENCY_CODE) {
+        const token = cookies.admin_override || "";
+        if (token && isValidOwnerToken(ADMIN_EMERGENCY_CODE, token)) {
+          if (req.session) req.session.userId = ADMIN_OSU_ID;
+        }
+      }
+      if ((!req.session || !req.session.userId) && ADMIN_EMERGENCY_CODE_FOID) {
+        const tokenF = cookies.admin_override_foid || "";
+        if (tokenF && isValidOwnerToken(ADMIN_EMERGENCY_CODE_FOID, tokenF)) {
+          if (req.session) req.session.userId = ADMIN_SECOND_OSU_ID;
+        }
       }
     }
 
@@ -351,6 +362,7 @@ app.post("/emergency-login", (req, res) => {
   }
 
   // log in as owner (cookie-based so it works across cloud run instances)
+  clearCookie(res, "admin_override_foid");
   if (req.session) req.session.userId = ADMIN_OSU_ID;
   const token = makeOwnerToken(ADMIN_EMERGENCY_CODE);
   setCookie(res, "admin_override", token, {
@@ -362,6 +374,39 @@ app.post("/emergency-login", (req, res) => {
   });
 
   req.session.flash = { type: "ok", message: "owner login ok" };
+  return res.redirect("/preferences");
+});
+
+// second admin emergency (12742221)
+app.get("/emergency-foid", (req, res) => {
+  res.render("pages/emergency_foid", { title: "emergency" });
+});
+
+app.post("/emergency-foid-login", (req, res) => {
+  const code = (req.body.code || "").toString().trim();
+
+  if (!ADMIN_EMERGENCY_CODE_FOID) {
+    req.session.flash = { type: "error", message: "foid emergency code not set" };
+    return res.redirect("/");
+  }
+
+  if (code !== ADMIN_EMERGENCY_CODE_FOID) {
+    req.session.flash = { type: "error", message: "wrong code" };
+    return res.redirect("/emergency-foid");
+  }
+
+  clearCookie(res, "admin_override");
+  if (req.session) req.session.userId = ADMIN_SECOND_OSU_ID;
+  const token = makeOwnerToken(ADMIN_EMERGENCY_CODE_FOID);
+  setCookie(res, "admin_override_foid", token, {
+    path: "/",
+    maxAgeSeconds: 7 * 24 * 60 * 60,
+    httpOnly: true,
+    sameSite: "Lax",
+    secure: true,
+  });
+
+  req.session.flash = { type: "ok", message: "admin login ok" };
   return res.redirect("/preferences");
 });
 
@@ -446,8 +491,9 @@ app.get("/auth/osu/callback", async (req, res) => {
 });
 
 app.post("/logout", (req, res) => {
-  // also clear owner override cookie
+  // clear emergency override cookies
   clearCookie(res, "admin_override");
+  clearCookie(res, "admin_override_foid");
   req.session.destroy(() => {
     res.redirect("/");
   });
