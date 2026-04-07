@@ -48,6 +48,16 @@
       <button class="btn profile-save-btn" type="submit">save profile</button>
     </div>
   </form>
+
+  <div class="divider">✿</div>
+
+  <form
+    action="/account/destroy"
+    method="post"
+    onsubmit="return confirm('are u sure? this deletes ur profile + messages and logs u out')"
+  >
+    <button class="btn ghost" type="submit">destroy ur profile</button>
+  </form>
 </section>
 
 <%- include("../partials/foot") %>

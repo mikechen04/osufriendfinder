@@ -272,7 +272,7 @@ app.post("/profile", requireAuth, (req, res) => {
     });
 });
 
-app.get("/browse", requireAuth, requireProfile, async (req, res) => {
+app.get("/browse", requireAuth, async (req, res) => {
   const me = res.locals.me;
   const fdb = rtdb();
 
@@ -306,6 +306,44 @@ app.get("/browse", requireAuth, requireProfile, async (req, res) => {
 
   out.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
   res.render("pages/browse", { title: "browse", users: out.slice(0, 50) });
+});
+
+app.post("/account/destroy", requireAuth, async (req, res) => {
+  try {
+    const me = res.locals.me;
+    const userId = me ? String(me.id) : String(req.session.userId);
+    const fdb = rtdb();
+
+    // delete own user + profile + inbox
+    const updates = {};
+    updates[`users/${userId}`] = null;
+    updates[`profiles/${userId}`] = null;
+    updates[`inbox/${userId}`] = null;
+
+    // also delete messages you sent to other people (stored in their inbox)
+    const inboxSnap = await fdb.ref("inbox").get();
+    const inboxObj = inboxSnap.exists() ? inboxSnap.val() : {};
+
+    for (const [toId, msgs] of Object.entries(inboxObj || {})) {
+      if (!msgs) continue;
+      for (const [msgId, msg] of Object.entries(msgs || {})) {
+        if (!msg) continue;
+        if (String(msg.from_user_id) === String(userId)) {
+          updates[`inbox/${toId}/${msgId}`] = null;
+        }
+      }
+    }
+
+    await fdb.ref().update(updates);
+
+    req.session.destroy(() => {
+      res.redirect("/");
+    });
+  } catch (e) {
+    console.error(e);
+    req.session.flash = { type: "error", message: "failed to destroy account" };
+    res.redirect("/profile");
+  }
 });
 
 app.post("/message/send", requireAuth, requireProfile, async (req, res) => {

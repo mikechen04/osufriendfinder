@@ -42,18 +42,25 @@
 
   <div class="divider">✿</div>
 
-  <form class="messagebox" action="/message/send" method="post">
-    <input type="hidden" name="to_user_id" data-browse-to-user-id value="" />
-    <label class="mini-label">send a message</label>
-    <textarea
-      name="body"
-      rows="3"
-      maxlength="600"
-      placeholder="如果妳是3 我就是9 因為除了你還是你"
-      required
-    ></textarea>
-    <button class="btn" type="submit">send</button>
-  </form>
+  <% if (me && me.age && me.bio && me.gender) { %>
+    <form class="messagebox" action="/message/send" method="post">
+      <input type="hidden" name="to_user_id" data-browse-to-user-id value="" />
+      <label class="mini-label">send a message</label>
+      <textarea
+        name="body"
+        rows="3"
+        maxlength="600"
+        placeholder="如果妳是3 我就是9 因為除了你還是你"
+        required
+      ></textarea>
+      <button class="btn" type="submit">send</button>
+    </form>
+  <% } else { %>
+    <div class="notice">
+      <div class="notice-title">u can browse, but u cant message yet</div>
+      <div class="notice-text">finish ur profile first (age + gender + description)</div>
+    </div>
+  <% } %>
 </section>
 
 <section class="card compact">
