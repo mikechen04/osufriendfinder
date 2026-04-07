@@ -42,5 +42,11 @@ function rtdb() {
   return admin.database();
 }
 
-module.exports = { rtdb };
+// for shared express-session across cloud run instances (same service account as rtdb)
+function firestore() {
+  initFirebase();
+  return admin.firestore();
+}
+
+module.exports = { rtdb, firestore };
 

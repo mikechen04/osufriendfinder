@@ -151,6 +151,9 @@ app.set("views", path.join(__dirname, "views"));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
+const SESSION_MAX_AGE_MS = parseInt(process.env.SESSION_MAX_AGE_MS || String(14 * 24 * 60 * 60 * 1000), 10);
+const SESSION_MAX_AGE_SEC = Math.floor(SESSION_MAX_AGE_MS / 1000);
+
 const sessionOptions = {
   // no need to set SESSION_SECRET in .env for local dev
   secret: process.env.SESSION_SECRET || "osu-edating-local-dev-session-key",
@@ -159,16 +162,39 @@ const sessionOptions = {
   cookie: {
     httpOnly: true,
     sameSite: "lax",
+    maxAge: SESSION_MAX_AGE_MS,
   },
 };
 
-// cloud run containers can be picky about writing files in the image dir.
-// keep it simple: use in-memory sessions in production for now.
-if (process.env.NODE_ENV !== "production" && SQLiteStore) {
+if (process.env.NODE_ENV === "production") {
+  sessionOptions.cookie.secure = true;
+}
+
+// firestore = shared sessions for all cloud run instances (fixes oauth state mismatch)
+const useFirestoreSessions = String(process.env.USE_FIRESTORE_SESSIONS || "").trim() === "1";
+if (useFirestoreSessions) {
+  try {
+    const { firestore } = require("./firebase");
+    const FirestoreSessionStore = require("./firestore-session-store");
+    const coll = (process.env.FIRESTORE_SESSION_COLLECTION || "express_sessions").trim() || "express_sessions";
+    sessionOptions.store = new FirestoreSessionStore(firestore(), {
+      collection: coll,
+      ttlSeconds: SESSION_MAX_AGE_SEC,
+    });
+    console.log("[session] firestore store:", coll);
+  } catch (e) {
+    console.error("[session] firestore failed, falling back to memory (logins may break on multi-instance)", e);
+  }
+} else if (process.env.NODE_ENV !== "production" && SQLiteStore) {
+  // local dev: sqlite file
   sessionOptions.store = new SQLiteStore({
     db: "sessions.sqlite",
     dir: path.join(__dirname, "data"),
   });
+} else if (process.env.NODE_ENV === "production" && !sessionOptions.store) {
+  console.warn(
+    "[session] in-memory store on production — set USE_FIRESTORE_SESSIONS=1 after enabling Firestore for reliable osu login"
+  );
 }
 
 app.use(session(sessionOptions));
