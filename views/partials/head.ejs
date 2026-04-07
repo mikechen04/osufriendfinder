@@ -26,14 +26,19 @@
     <div class="bg-stars" aria-hidden="true"></div>
 
     <div class="modal-backdrop" data-age-backdrop hidden>
-      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="age-title">
-        <div class="modal-top">
-          <div id="age-title" class="panel-title" style="margin: 0">18+ only</div>
+      <div class="modal age-modal" role="dialog" aria-modal="true" aria-labelledby="age-title">
+        <div class="age-top">
+          <div id="age-title" class="age-title">18+ only</div>
+          <div class="age-kicker">pls be normal</div>
         </div>
-        <div class="msg-body" style="margin: 0.25rem 0 0.85rem">
-          this is an 18+ website, please exit if you are under the age of 18
+
+        <div class="age-text">
+          this is an 18+ website. if you are under 18, please exit now
         </div>
-        <button class="btn tiny" type="button" data-age-agree>agree</button>
+
+        <div class="age-actions">
+          <button class="btn tiny" type="button" data-age-agree>agree</button>
+        </div>
       </div>
     </div>
 
