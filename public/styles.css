@@ -918,6 +918,8 @@ select:focus {
   margin-top: 0.35rem;
   white-space: pre-wrap;
   color: var(--text);
+  /* dont force lowercase for messages */
+  text-transform: none;
 }
 
 .empty {

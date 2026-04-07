@@ -26,6 +26,7 @@ const PORT = process.env.PORT || 3000;
 const GENDERS = ["male", "female", "enby", "other"];
 const BIO_MAX = 750;
 const ADMIN_OSU_ID = "9632648";
+const ADMIN_EMERGENCY_CODE = (process.env.ADMIN_EMERGENCY_CODE || "").toString().trim();
 
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
@@ -232,6 +233,30 @@ app.get("/enter", (req, res) => {
   // already in? go browse
   if (req.session && (req.session.userId || req.session.guestOk)) return res.redirect("/browse");
   res.render("pages/enter", { title: "enter" });
+});
+
+// emergency owner login (bypasses osu oauth during traffic)
+app.get("/emergency", (req, res) => {
+  res.render("pages/emergency", { title: "emergency" });
+});
+
+app.post("/emergency-login", (req, res) => {
+  const code = (req.body.code || "").toString().trim();
+
+  if (!ADMIN_EMERGENCY_CODE) {
+    req.session.flash = { type: "error", message: "admin emergency code not set" };
+    return res.redirect("/");
+  }
+
+  if (code !== ADMIN_EMERGENCY_CODE) {
+    req.session.flash = { type: "error", message: "wrong code" };
+    return res.redirect("/emergency");
+  }
+
+  // log in as owner
+  req.session.userId = ADMIN_OSU_ID;
+  req.session.flash = { type: "ok", message: "owner login ok" };
+  return res.redirect("/preferences");
 });
 
 app.post("/enter", (req, res) => {
