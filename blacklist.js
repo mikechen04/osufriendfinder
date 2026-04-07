@@ -16,5 +16,6 @@ module.exports = new Set([
   "20630250", // kisoi
   "10325072", // random person
   "23231990", // reymexia
+  "36579213",
 ]);
 
