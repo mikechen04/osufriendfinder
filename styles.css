@@ -160,6 +160,70 @@ a {
   display: inline;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(20, 10, 30, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+.modal-backdrop[hidden] {
+  display: none;
+}
+
+.modal {
+  width: min(560px, 96vw);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 1.15rem 1.15rem 1.25rem;
+}
+
+.age-modal {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.86));
+  border: 1px solid rgba(255, 184, 217, 0.55);
+}
+
+.age-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.age-title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.age-kicker {
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #c44b9e;
+}
+
+.age-text {
+  color: var(--muted);
+  font-weight: 700;
+  line-height: 1.45;
+  margin: 0.25rem 0 1rem;
+}
+
+.age-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
 /* page shell */
 .wrap {
   position: relative;
