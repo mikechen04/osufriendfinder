@@ -7,7 +7,7 @@ module.exports = new Set([
   "25778339", // tornado
   "17058928", // tarragon
   "16616677", // cyberoni
-  "10042684", // katie v2
+  "10042684", 
   "11962818", // kendall
   "16522589", // teppi fangirl
   "16320893", // dever
