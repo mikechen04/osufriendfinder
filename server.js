@@ -42,11 +42,8 @@ function envTruthy(name) {
   return v === "1" || v === "true" || v === "yes";
 }
 const SITE_READ_ONLY = envTruthy("SITE_READ_ONLY");
-const READ_ONLY_ALLOW_ADMIN_POSTS = envTruthy("READ_ONLY_ALLOW_ADMIN_POSTS");
 if (SITE_READ_ONLY) {
-  console.warn(
-    "[site] SITE_READ_ONLY on — forms disabled; oauth callback blocked; use READ_ONLY_ALLOW_ADMIN_POSTS=1 if admins must post"
-  );
+  console.warn("[site] SITE_READ_ONLY on — logins ok; posting/saving blocked for non-staff");
 }
 const SLUR_RE = /\bfaggots?\b/i;
 
@@ -430,6 +427,7 @@ app.use(async (req, res, next) => {
   } catch (e) {
     console.error(e);
     res.locals.me = null;
+    res.locals.isAdmin = false;
     res.locals.flash = null;
     res.locals.siteAnnouncement = null;
     next();
@@ -442,7 +440,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// block writes in read-only mode (oauth callback is GET but updates rtdb — block that too)
+// read-only: block form posts for normal users (osu login + guest enter still allowed)
 function redirectSameOriginRefererOrHome(req, res) {
   const ref = req.get("Referer");
   if (ref) {
@@ -462,16 +460,10 @@ function redirectSameOriginRefererOrHome(req, res) {
 
 function readOnlyBlockWrites(req, res, next) {
   if (!SITE_READ_ONLY) return next();
+  // staff can do anything
+  if (res.locals.isAdmin) return next();
 
   const p = req.path || "";
-
-  if (req.method === "GET" && p === "/auth/osu/callback") {
-    req.session.flash = {
-      type: "warn",
-      message: "sign-in is paused — site is in read-only mode",
-    };
-    return res.redirect("/");
-  }
 
   const m = req.method;
   if (m !== "POST" && m !== "PUT" && m !== "PATCH" && m !== "DELETE") {
@@ -480,10 +472,8 @@ function readOnlyBlockWrites(req, res, next) {
 
   if (p === "/logout") return next();
   if (p === "/emergency-login" || p === "/emergency-foid-login") return next();
-
-  if (READ_ONLY_ALLOW_ADMIN_POSTS && p.startsWith("/admin/") && res.locals.isAdmin) {
-    return next();
-  }
+  if (p === "/enter") return next();
+  if (p === "/guest/exit") return next();
 
   req.session.flash = {
     type: "warn",
@@ -560,9 +550,11 @@ function sendHomeHtml(req, res) {
   }
   html = html.replace("<!--ANNOUNCEMENT-->", annBlock);
   let roBlock = "";
-  if (res.locals.siteReadOnly) {
+  const showRoBanner =
+    SITE_READ_ONLY && !(res.locals.me && isAdmin(res.locals.me));
+  if (showRoBanner) {
     roBlock =
-      '<div class="site-readonly-banner" role="status"><div class="site-readonly-inner">read-only mode — you can look around, but messages, edits, and new sign-ins are off</div></div>';
+      '<div class="site-readonly-banner" role="status"><div class="site-readonly-inner">read-only mode — you can browse and sign in, but sending messages and saving changes are off</div></div>';
   }
   html = html.replace("<!--READONLY-->", roBlock);
   if (flash) {
@@ -1871,8 +1863,8 @@ app.get("/inbox/:otherId", requireAuth, requireProfile, async (req, res) => {
       updates[`inbox/${userId}/${m.id}/read_at`] = now;
     }
   }
-  // dont touch rtdb on open thread when site is frozen
-  if (!SITE_READ_ONLY && Object.keys(updates).length) {
+  // mark read is ok in read-only (not sending messages)
+  if (Object.keys(updates).length) {
     await fdb.ref().update(updates);
   }
 

@@ -32,10 +32,10 @@
         </div>
       </div>
     <% } %>
-    <% if (typeof siteReadOnly !== "undefined" && siteReadOnly) { %>
+    <% if (typeof siteReadOnly !== "undefined" && siteReadOnly && !isAdmin) { %>
       <div class="site-readonly-banner" role="status">
         <div class="site-readonly-inner">
-          read-only mode — you can look around, but messages, edits, and new sign-ins are off
+          read-only mode — you can browse and sign in, but sending messages and saving changes are off
         </div>
       </div>
     <% } %>
