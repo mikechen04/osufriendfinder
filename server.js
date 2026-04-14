@@ -2723,7 +2723,17 @@ app.get("/inbox/:otherId", requireAuth, requireProfile, async (req, res) => {
   res.render("pages/inbox_thread", { title: "inbox", me, otherId, other, messages: thread, view });
 });
 
-// static assets after app routes — fixes "Cannot GET /feed" if a static file plugin or future public/feed file would steal the path
+// home page assets live next to index.html (styles.css + app.js) — explicit routes so deploy always finds them
+app.get("/styles.css", (req, res) => {
+  res.type("text/css");
+  res.sendFile(path.join(__dirname, "styles.css"));
+});
+app.get("/app.js", (req, res) => {
+  res.type("application/javascript");
+  res.sendFile(path.join(__dirname, "app.js"));
+});
+
+// optional extra static files (empty by default)
 app.use(express.static(path.join(__dirname, "public")));
 
 app.listen(PORT, "0.0.0.0", () => {

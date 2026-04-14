@@ -11,7 +11,7 @@ RUN npm ci --omit=dev
 
 COPY . .
 
-# index.html lives at repo root next to this Dockerfile (home page for GET /)
+# landing bundle: index.html + styles.css + app.js at repo root (GET / injects flash into index.html; /styles.css + /app.js served explicitly)
 
 ENV NODE_ENV=production
 EXPOSE 8080
