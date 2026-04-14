@@ -80,14 +80,20 @@ function initAnnouncementBanner(annEl) {
 // static index.html never runs express — fetch banners from the real server
 function hydrateSiteStatusFromApi() {
   var meta = document.querySelector('meta[name="api-origin"]');
-  if (!meta || !meta.content) return Promise.resolve();
+  // if meta is missing/empty, default to current origin (works great on custom domains)
+  var base = "";
+  if (meta && meta.content && String(meta.content).trim() !== "") {
+    base = String(meta.content).trim();
+  } else {
+    base = window.location.origin;
+  }
 
   // if both mount nodes are gone, express already injected everything (no need to hit api)
   if (!document.getElementById("site-announcement-mount") && !document.getElementById("site-readonly-mount")) {
     return Promise.resolve();
   }
 
-  var base = meta.content.replace(/\/$/, "");
+  base = base.replace(/\/$/, "");
   return fetch(base + "/api/site-status")
     .then(function(r) {
       return r.json();
