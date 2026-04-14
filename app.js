@@ -56,6 +56,83 @@ function formatTheirPrefs(tp) {
   return tags;
 }
 
+// init close button + localStorage dismiss for one announcement (runs after server or api hydrate)
+function initAnnouncementBanner(annEl) {
+  if (!annEl) return;
+  try {
+    const exp = annEl.getAttribute("data-announcement-expires");
+    const key = "announcementDismissedExpires";
+    if (exp && localStorage.getItem(key) === exp) {
+      annEl.hidden = true;
+    }
+    const closeBtn = annEl.querySelector(".site-announcement-close");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", function() {
+        if (exp) localStorage.setItem(key, exp);
+        annEl.hidden = true;
+      });
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+// static index.html never runs express — fetch banners from the real server
+function hydrateSiteStatusFromApi() {
+  var meta = document.querySelector('meta[name="api-origin"]');
+  if (!meta || !meta.content) return Promise.resolve();
+
+  // if both mount nodes are gone, express already injected everything (no need to hit api)
+  if (!document.getElementById("site-announcement-mount") && !document.getElementById("site-readonly-mount")) {
+    return Promise.resolve();
+  }
+
+  var base = meta.content.replace(/\/$/, "");
+  return fetch(base + "/api/site-status")
+    .then(function(r) {
+      return r.json();
+    })
+    .then(function(data) {
+      // announcement
+      if (!qs(".site-announcement")) {
+        var a = data.announcement;
+        if (a && a.text) {
+          var exp = Number(a.expires_at);
+          if (Number.isFinite(exp) && exp > Date.now()) {
+            var until = new Date(exp).toLocaleString();
+            var mount = document.getElementById("site-announcement-mount");
+            if (mount) {
+              var html =
+                '<div class="site-announcement" role="status" data-announcement-expires="' +
+                (Number.isFinite(exp) ? exp : "") +
+                '"><button type="button" class="site-announcement-close" aria-label="close announcement">&times;</button><div class="site-announcement-inner"><span class="site-announcement-label">announcement</span><p class="site-announcement-text">' +
+                escHtml(a.text) +
+                '</p><span class="site-announcement-until">shows until ' +
+                escHtml(until) +
+                "</span></div></div>";
+              mount.insertAdjacentHTML("beforebegin", html);
+              mount.remove();
+            }
+          }
+        }
+      }
+      // read-only
+      if (!qs(".site-readonly-banner") && data.readOnly) {
+        var rm = document.getElementById("site-readonly-mount");
+        if (rm) {
+          rm.insertAdjacentHTML(
+            "beforebegin",
+            '<div class="site-readonly-banner" role="status"><div class="site-readonly-inner">read-only mode - browsing is enabled but you can not send messages</div></div>'
+          );
+          rm.remove();
+        }
+      }
+    })
+    .catch(function() {
+      // offline or api down — page still works
+    });
+}
+
 function renderHomeShowcase() {
   const wrap = qs("[data-home-showcase]");
   const grid = qs("[data-home-showcase-grid]");
@@ -395,26 +472,10 @@ document.addEventListener("DOMContentLoaded", () => {
     // ignore
   }
 
-  // site announcement — close saves which expiry you dismissed so new posts show again
-  try {
-    const annEl = qs(".site-announcement[data-announcement-expires]");
-    if (annEl) {
-      const exp = annEl.getAttribute("data-announcement-expires");
-      const key = "announcementDismissedExpires";
-      if (exp && localStorage.getItem(key) === exp) {
-        annEl.hidden = true;
-      }
-      const closeBtn = annEl.querySelector(".site-announcement-close");
-      if (closeBtn) {
-        closeBtn.addEventListener("click", () => {
-          if (exp) localStorage.setItem(key, exp);
-          annEl.hidden = true;
-        });
-      }
-    }
-  } catch (e) {
-    // ignore
-  }
+  // site announcement — after optional api hydrate for static hosting
+  hydrateSiteStatusFromApi().then(function() {
+    initAnnouncementBanner(qs(".site-announcement[data-announcement-expires]"));
+  });
 
   renderHomeShowcase();
   renderBrowseStack();

@@ -13,6 +13,8 @@
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="circle! e-friend finder" />
     <meta name="twitter:description" content="find ur osu friends and look at cool scores" />
+    <!-- where to pull announcement + read-only for static pages (github pages etc.) — must match deployed cloud run url -->
+    <meta name="api-origin" content="https://osudatingmeow-git-57346811168.us-east1.run.app" />
     <link rel="icon" href="https://a.ppy.sh/12742221?1773291467.png" type="image/png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -24,9 +26,9 @@
     <script src="app.js" defer></script>
   </head>
   <body>
-    <!--ANNOUNCEMENT-->
-    <!--READONLY-->
-    <!--PREVIEW-->
+    <div id="site-announcement-mount"></div>
+    <div id="site-readonly-mount"></div>
+    <div id="site-preview-mount"></div>
     <div class="bg-stars" aria-hidden="true"></div>
 
     <div class="modal-backdrop" data-age-backdrop hidden>
@@ -72,7 +74,7 @@
       <div class="rr-header-actions">
         <a class="linklike" href="/browse">browse</a>
         <span class="nav-dot" aria-hidden="true">·</span>
-        <a class="btn btn-primary btn-tiny" href="/auth/osu">sign in with osu!</a>
+        <a class="btn btn-primary btn-tiny" href="https://osudatingmeow-git-57346811168.us-east1.run.app/auth/osu">sign in with osu!</a>
       </div>
     </header>
 
@@ -88,7 +90,7 @@
         <p class="rr-hero-sub">find ur osu friends and look at cool scores</p>
 
         <div class="rr-hero-cta">
-          <a class="btn btn-primary" href="/auth/osu">sign in with osu!</a>
+          <a class="btn btn-primary" href="https://osudatingmeow-git-57346811168.us-east1.run.app/auth/osu">sign in with osu!</a>
           <a class="btn btn-outline" href="/browse">browse</a>
         </div>
 
@@ -163,11 +165,7 @@
       </p>
     </footer>
 
-<<<<<<< HEAD
     <!-- showcase data injected server-side so it always works -->
     <!--SHOWCASE_DATA-->
-=======
-    <!-- this landing page is static (github pages/custom domain), so server only links must point at cloud run -->
->>>>>>> 60c3a0189ea7b8faaa5932c3e0dadf7818c87080
   </body>
 </html>

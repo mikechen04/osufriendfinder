@@ -561,20 +561,7 @@ app.use(async (req, res, next) => {
       }
     }
 
-    res.locals.siteAnnouncement = null;
-    try {
-      const annSnap = await rtdb().ref("site/announcement").get();
-      if (annSnap.exists()) {
-        const v = annSnap.val();
-        const annText = (v.text || "").toString().trim();
-        const exp = Number(v.expires_at);
-        if (annText && Number.isFinite(exp) && exp > Date.now()) {
-          res.locals.siteAnnouncement = { text: annText, expires_at: exp };
-        }
-      }
-    } catch (annErr) {
-      console.error(annErr);
-    }
+    res.locals.siteAnnouncement = await fetchSiteAnnouncement();
 
     res.locals.flash = req.session.flash || null;
     req.session.flash = null;
@@ -696,6 +683,24 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
+// shared with /api/site-status so github pages static index can show the same banners
+async function fetchSiteAnnouncement() {
+  try {
+    const annSnap = await rtdb().ref("site/announcement").get();
+    if (annSnap.exists()) {
+      const v = annSnap.val();
+      const annText = (v.text || "").toString().trim();
+      const exp = Number(v.expires_at);
+      if (annText && Number.isFinite(exp) && exp > Date.now()) {
+        return { text: annText, expires_at: exp };
+      }
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  return null;
+}
+
 // home page is root index.html (same folder as Dockerfile) — inject flash for oauth errors etc.
 // pull featured users from firebase — same logic as the api route but reusable
 async function getFeaturedUsers(userId, adminSeeAll) {
@@ -761,7 +766,10 @@ async function sendHomeHtml(req, res) {
     const annExp = Number(ann.expires_at);
     annBlock = `<div class="site-announcement" role="status" data-announcement-expires="${Number.isFinite(annExp) ? annExp : ""}"><button type="button" class="site-announcement-close" aria-label="close announcement">&times;</button><div class="site-announcement-inner"><span class="site-announcement-label">announcement</span><p class="site-announcement-text">${escapeHtml(ann.text)}</p><span class="site-announcement-until">shows until ${escapeHtml(until)}</span></div></div>`;
   }
-  html = html.replace("<!--ANNOUNCEMENT-->", annBlock);
+  html = html.replace(
+    '<div id="site-announcement-mount"></div>',
+    annBlock || '<div id="site-announcement-mount"></div>'
+  );
   let roBlock = "";
   const showRoBanner =
     SITE_READ_ONLY &&
@@ -770,13 +778,19 @@ async function sendHomeHtml(req, res) {
     roBlock =
       '<div class="site-readonly-banner" role="status"><div class="site-readonly-inner">read-only mode - browsing is enabled but you can not send messages</div></div>';
   }
-  html = html.replace("<!--READONLY-->", roBlock);
+  html = html.replace(
+    '<div id="site-readonly-mount"></div>',
+    roBlock || '<div id="site-readonly-mount"></div>'
+  );
   let previewBlock = "";
   if (res.locals.viewAsRegularUser) {
     previewBlock =
       '<div class="site-preview-banner" role="region" aria-label="preview mode"><div class="site-preview-inner"><span>viewing as a default user</span><form action="/admin/preview-as-user/end" method="post" class="inline"><button class="btn btn-primary btn-tiny" type="submit">back to admin</button></form></div></div>';
   }
-  html = html.replace("<!--PREVIEW-->", previewBlock);
+  html = html.replace(
+    '<div id="site-preview-mount"></div>',
+    previewBlock || '<div id="site-preview-mount"></div>'
+  );
   if (flash) {
     html = html.replace(
       "<!--FLASH-->",
@@ -807,6 +821,24 @@ async function sendHomeHtml(req, res) {
 
 app.get("/api/me", (req, res) => {
   res.json({ loggedIn: !!(req.session && req.session.userId) });
+});
+
+// for static hosting (e.g. github pages): browser fetches this and injects banners — same data as express middleware
+app.options("/api/site-status", (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.status(204).end();
+});
+
+app.get("/api/site-status", async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Cache-Control", "public, max-age=30");
+  const announcement = await fetchSiteAnnouncement();
+  res.json({
+    readOnly: SITE_READ_ONLY,
+    announcement,
+  });
 });
 
 app.get("/api/featured", requireAuth, async (req, res) => {
