@@ -17,7 +17,11 @@ function loadEnvFile() {
   }
   const parsed = dotenv.parse(raw);
   for (const [key, value] of Object.entries(parsed)) {
-    process.env[key] = value;
+    // dont clobber real env vars (cloud run sets PORT=8080, secrets, etc.)
+    // .env is mainly for local dev
+    if (process.env[key] == null || String(process.env[key]).trim() === "") {
+      process.env[key] = value;
+    }
   }
 }
 
