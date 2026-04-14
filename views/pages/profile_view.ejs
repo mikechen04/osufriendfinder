@@ -1,18 +1,26 @@
 <%- include("../partials/head", { title }) %>
 
+<%
+  const isTourneyProfile = typeof mode !== "undefined" && mode === "tourney";
+%>
+
 <section class="card<%= me && me.cute_tint ? " profile-card-cute" : "" %>">
   <p class="est">profile</p>
-  <h1 class="h1">this is what ppl see</h1>
+  <h1 class="h1"><%= isTourneyProfile ? "tourney teammate finder profile" : "friend finder profile" %></h1>
+  <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.6rem; margin-bottom: 0.9rem">
+    <a class="btn tiny <%= !isTourneyProfile ? '' : 'ghost' %>" href="/profile">friend finder profile</a>
+    <a class="btn tiny <%= isTourneyProfile ? '' : 'ghost' %>" href="/profile/tourney">tourney teammate finder profile</a>
+  </div>
 
   <% if (!me || !me.age || !me.bio || !me.gender) { %>
     <div class="notice" style="margin-top: 0.75rem">
       <div class="notice-title">ur profile isnt done yet</div>
-      <div class="notice-text">add age + gender + description so ppl can see u</div>
+      <div class="notice-text">add age + gender + both descriptions (friend + tourney)</div>
     </div>
     <a class="btn" href="/profile/edit">edit profile</a>
   <% } else { %>
-    <div class="profile-block">
-      <img class="avatar big" src="<%= me.avatar_url || 'https://files.catbox.moe/evvmvg.webp' %>" alt="" />
+    <div class="profile-block" style="margin-top: 0.15rem">
+      <img class="avatar big" src="<%= me.avatar_url || 'https://a.ppy.sh/12742221?1773291467.png' %>" alt="" />
       <div>
         <div class="user-name">
           <%= me.display_name || me.username %>
@@ -38,8 +46,8 @@
     </div>
 
     <div class="stack-item" style="margin-top: 0.85rem">
-      <h3>bio</h3>
-      <p><%= me.bio %></p>
+      <h3><%= isTourneyProfile ? "tourney teammate description" : "friend finder description" %></h3>
+      <div class="bio big"><%= isTourneyProfile ? me.tourney_bio : me.bio %></div>
     </div>
 
     <% if (me.discord) { %>
@@ -49,27 +57,77 @@
       </div>
     <% } %>
 
-    <div class="stack-item" style="margin-top: 0.85rem">
-      <h3>looking for:</h3>
-      <%
-        const p = (typeof prefs !== "undefined" ? prefs : null);
-        const minAge = p && typeof p.min_age === "number" ? p.min_age : null;
-        const maxAge = p && typeof p.max_age === "number" ? p.max_age : null;
-        const genders = p && Array.isArray(p.genders) ? p.genders : [];
+    <% if (!isTourneyProfile) { %>
+      <div class="stack-item" style="margin-top: 0.85rem">
+        <h3>preferences</h3>
+        <%
+          const p = (typeof prefs !== "undefined" ? prefs : null);
+          const minAge = p && typeof p.min_age === "number" ? p.min_age : null;
+          const maxAge = p && typeof p.max_age === "number" ? p.max_age : null;
+          const genders = p && Array.isArray(p.genders) ? p.genders : [];
+          const rankMax = p && typeof p.rank_max === "number" ? p.rank_max : null;
 
-        let ageLine = "any age";
-        if (minAge != null && maxAge != null) ageLine = `${minAge}-${maxAge}`;
-        else if (minAge != null) ageLine = `${minAge}+`;
-        else if (maxAge != null) ageLine = `up to ${maxAge}`;
-
-        let genderLine = "any gender";
-        if (genders.length) genderLine = genders.join(", ");
-
-        let rankLine = "any rank";
-        if (p && typeof p.rank_max === "number") rankLine = `#${p.rank_max}+`;
-      %>
-      <p><%= ageLine %> · <%= genderLine %> · <%= rankLine %></p>
-    </div>
+          // build the list of bubbles
+          const prefBubbles = [];
+          if (minAge != null && maxAge != null) prefBubbles.push(`ages ${minAge}–${maxAge}`);
+          else if (minAge != null) prefBubbles.push(`ages ${minAge}+`);
+          else if (maxAge != null) prefBubbles.push(`up to ${maxAge}`);
+          genders.forEach(g => prefBubbles.push(g));
+          if (rankMax != null) prefBubbles.push(`#${rankMax}+`);
+        %>
+        <% if (prefBubbles.length === 0) { %>
+          <p class="muted" style="margin-top: 0.35rem">none set</p>
+        <% } else { %>
+          <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem">
+            <% prefBubbles.forEach(b => { %>
+              <span class="tag"><%= b %></span>
+            <% }) %>
+          </div>
+        <% } %>
+      </div>
+    <% } else { %>
+      <div class="stack-item" style="margin-top: 0.85rem">
+        <h3>tourney teammate skills</h3>
+        <%
+          const tp = typeof tourneyPrefs !== "undefined" ? tourneyPrefs : null;
+          const tourneyMods = tp && Array.isArray(tp.mods) ? tp.mods : [];
+          const tourneySkillsets = tp && Array.isArray(tp.skillsets) ? tp.skillsets : [];
+          const tourneyRanks = tp && Array.isArray(tp.rank_ranges) ? tp.rank_ranges : [];
+          const hasTourneyPrefs = tourneyMods.length || tourneySkillsets.length || tourneyRanks.length;
+        %>
+        <% if (!hasTourneyPrefs) { %>
+          <p class="muted" style="margin-top: 0.35rem">none set</p>
+          <p class="muted" style="margin-top: 0.35rem">set these in edit profile so people can find u in tourney mode</p>
+        <% } else { %>
+          <div style="display: flex; flex-direction: column; gap: 0.55rem; margin-top: 0.35rem">
+            <div>
+              <div class="mini-label">mods</div>
+              <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem">
+                <% tourneyMods.forEach(function(m) { %>
+                  <span class="tag"><%= m %></span>
+                <% }) %>
+              </div>
+            </div>
+            <div>
+              <div class="mini-label">skillsets</div>
+              <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem">
+                <% tourneySkillsets.forEach(function(s) { %>
+                  <span class="tag"><%= s %></span>
+                <% }) %>
+              </div>
+            </div>
+            <div>
+              <div class="mini-label">rank range</div>
+              <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem">
+                <% tourneyRanks.forEach(function(r) { %>
+                  <span class="tag"><%= r === "open" ? "open rank" : r %></span>
+                <% }) %>
+              </div>
+            </div>
+          </div>
+        <% } %>
+      </div>
+    <% } %>
 
     <div class="divider">✿</div>
 

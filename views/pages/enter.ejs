@@ -1,6 +1,6 @@
 <%- include("../partials/head", { title }) %>
 
-<section class="card">
+<section class="card enter-gate">
   <p class="est">guest</p>
   <h1 class="h1">enter the gate</h1>
 
@@ -8,22 +8,21 @@
     <div class="stack-item">
       <h3>sign in</h3>
       <p>recommended. lets u message and all that</p>
-      <a class="btn tiny" href="/auth/osu">sign in with osu!</a>
+      <a class="btn tiny enter-gate-btn" href="/auth/osu">sign in with osu!</a>
     </div>
 
     <div class="stack-item">
       <h3>secret code</h3>
       <p>if u know, u know</p>
-      <form action="/enter" method="post" class="form" style="margin-top: 0.75rem">
+      <form action="/enter" method="post" class="form enter-gate-form">
         <div class="form-row">
           <label for="code">code</label>
-          <input id="code" name="code" type="password" maxlength="32" placeholder="code" required />
+          <input id="code" name="code" type="password" maxlength="32" placeholder="code" required autocomplete="off" />
         </div>
-        <button class="btn tiny" type="submit">enter</button>
+        <button class="btn tiny enter-gate-btn" type="submit">enter</button>
       </form>
     </div>
   </div>
 </section>
 
 <%- include("../partials/foot") %>
-

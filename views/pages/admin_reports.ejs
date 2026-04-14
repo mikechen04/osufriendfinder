@@ -1,0 +1,65 @@
+<%- include("../partials/head", { title }) %>
+
+<section class="card">
+  <p class="est">admin</p>
+  <h1 class="h1">reports</h1>
+  <p class="muted" style="margin-top: 0.35rem">
+    <a class="softlink" href="/admin">← back to admin</a>
+  </p>
+
+  <div class="stack-section" style="margin-top: 1rem">
+    <% if (!reports || reports.length === 0) { %>
+      <p class="muted" style="margin-top: 0.65rem">no reports right now</p>
+    <% } else { %>
+      <% reports.forEach(r => { %>
+        <div class="stack-item" style="margin: 0">
+          <div style="display: flex; gap: 0.75rem; justify-content: space-between; flex-wrap: wrap">
+            <div style="min-width: 220px">
+              <div style="font-weight: 800">
+                from <%= r.from_username || 'unknown' %>
+                <% if (r.from_osu_id) { %>
+                  (<a class="softlink" href="https://osu.ppy.sh/users/<%= r.from_osu_id %>" target="_blank" rel="noreferrer">osu</a>)
+                <% } %>
+                <% if (r.from_username || r.from_osu_id) { %>
+                  · <a class="softlink" href="/admin/view-profile?q=<%= encodeURIComponent(r.from_osu_id || r.from_username) %>">profile</a>
+                <% } %>
+              </div>
+              <div class="muted" style="margin-top: 0.1rem">
+                about <%= r.to_username || r.to_user_id || 'unknown' %>
+                <% if (r.to_osu_id) { %>
+                  (<a class="softlink" href="https://osu.ppy.sh/users/<%= r.to_osu_id %>" target="_blank" rel="noreferrer">osu</a>)
+                <% } %>
+                <% if (r.to_username || r.to_osu_id) { %>
+                  · <a class="softlink" href="/admin/view-profile?q=<%= encodeURIComponent(r.to_osu_id || r.to_username) %>">profile</a>
+                <% } %>
+              </div>
+              <div class="muted" style="margin-top: 0.25rem; font-size: 0.82rem"><%= new Date(r.created_at || Date.now()).toLocaleString() %></div>
+            </div>
+
+            <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center">
+              <% if (r.from_inbox && r.from_user_id && r.to_user_id) { %>
+                <a class="btn tiny ghost" href="/admin/messages/thread?a=<%= encodeURIComponent(r.from_user_id) %>&b=<%= encodeURIComponent(r.to_user_id) %>">view chat</a>
+              <% } %>
+              <form action="/admin/reports/done" method="post" class="inline">
+                <input type="hidden" name="report_id" value="<%= r.id %>" />
+                <button class="btn tiny ghost" type="submit">mark done</button>
+              </form>
+              <% if (r.to_user_id || r.to_osu_id) { %>
+                <form action="/admin/reports/ban" method="post" class="inline" onsubmit="return confirm('ban this user? this kicks them and they cant browse')">
+                  <input type="hidden" name="report_id" value="<%= r.id %>" />
+                  <input type="hidden" name="ban_user_id" value="<%= r.to_user_id || '' %>" />
+                  <input type="hidden" name="ban_osu_id" value="<%= r.to_osu_id || '' %>" />
+                  <button class="btn tiny danger" type="submit">ban</button>
+                </form>
+              <% } %>
+            </div>
+          </div>
+
+          <div class="msg-body" style="margin-top: 0.65rem"><%= r.body %></div>
+        </div>
+      <% }) %>
+    <% } %>
+  </div>
+</section>
+
+<%- include("../partials/foot") %>

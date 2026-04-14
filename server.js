@@ -15,8 +15,6 @@ try {
 
 const { osuAuthorizeUrl, osuExchangeCodeForToken, osuGetMe } = require("./osu");
 const { rtdb } = require("./firebase");
-// blacklist now lives in rtdb at site/blacklist/{osuId}: true
-const OSU_ID_BLACKLIST = new Set();
 
 const app = express();
 
@@ -25,9 +23,18 @@ app.set("trust proxy", 1);
 
 const PORT = process.env.PORT || 3000;
 const GENDERS = ["male", "female", "enby", "other"];
-// partner must be this rank or better (lower osu global_rank number). null = any rank
+// browse age prefs (inputs + validation)
+const PREF_AGE_MIN = 18;
+const PREF_AGE_MAX = 67;
+// browse filter: must be this rank or better (lower osu global_rank number). null = any rank
 const RANK_PREF_THRESHOLDS = [1, 100, 500, 1000, 5000, 10000, 50000];
 const BIO_MAX = 750;
+// tourney teammate finder options
+const TOURNEY_MODS = ["nm", "hr", "hd", "dt"];
+const TOURNEY_SKILLSETS = ["aim", "flow aim", "streams", "alt", "tech", "gimmick", "low ar", "stamina", "speed", "tapping", "dt alt", "antimod", "all rounder", "wokeness"];
+const TOURNEY_RANK_RANGES = ["open", "1k-5k", "5k-10k", "10k-50k", "50k+"];
+const FEED_CAPTION_MAX = 500;
+const FEED_COMMENT_MAX = 400;
 const ANNOUNCE_TEXT_MAX = 2000;
 const ANNOUNCE_MIN_HOURS = 0.25;
 const ANNOUNCE_MAX_HOURS = 24 * 30; // 30 days
@@ -35,7 +42,9 @@ const ADMIN_OSU_ID = "9632648"; // owner/admin inbox id for reports etc
 const ADMIN_SECOND_OSU_ID = "12742221"; // second admin emergency login
 const ADMIN_OSU_IDS = new Set(["9632648", "12742221"]);
 const ADMIN_EMERGENCY_CODE = (process.env.ADMIN_EMERGENCY_CODE || "").toString().trim();
-const ADMIN_EMERGENCY_CODE_FOID = (process.env.ADMIN_EMERGENCY_CODE_FOID || "").toString().trim();
+const ADMIN_EMERGENCY_CODE2 = (process.env.ADMIN_EMERGENCY_CODE2 || "").toString().trim();
+// guest browse code — set in env, never hardcoded
+const GUEST_CODE = (process.env.GUEST_CODE || "").toString().trim();
 
 // whole-site freeze: see .env.example
 function envTruthy(name) {
@@ -45,6 +54,53 @@ function envTruthy(name) {
 const SITE_READ_ONLY = envTruthy("SITE_READ_ONLY");
 if (SITE_READ_ONLY) {
   console.warn("[site] SITE_READ_ONLY on — logins ok; posting/saving blocked for non-staff");
+}
+
+// only allow same-origin relative paths for redirect_to to prevent open redirects
+// valid: "/inbox/123", "/browse"   invalid: "//evil.com", "https://evil.com"
+function safeRedirectPath(raw, fallback) {
+  var s = (raw || "").toString().trim();
+  // must start with / but not // (protocol-relative)
+  if (s && s.startsWith("/") && !s.startsWith("//")) return s;
+  return fallback || "/browse";
+}
+
+// simple in-memory rate limiter — tracks how many times a user did something in a window
+// not perfect (resets on restart, no redis) but fine for light abuse prevention
+const rateLimitStore = new Map();
+function checkRateLimit(userId, action, maxPerWindow, windowMs) {
+  var key = `${userId}:${action}`;
+  var now = Date.now();
+  var entry = rateLimitStore.get(key) || { count: 0, resetAt: now + windowMs };
+  if (now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + windowMs };
+  }
+  entry.count++;
+  rateLimitStore.set(key, entry);
+  return entry.count > maxPerWindow;
+}
+
+// ip-based rate limit — used for unauthenticated sensitive endpoints
+function checkIpRateLimit(req, action, maxPerWindow, windowMs) {
+  var ip = req.ip || "unknown";
+  return checkRateLimit(ip, action, maxPerWindow, windowMs);
+}
+
+// constant-time string compare to prevent timing attacks on secret codes
+function timingSafeEqual(a, b) {
+  try {
+    var aBuf = Buffer.from(String(a));
+    var bBuf = Buffer.from(String(b));
+    // must be same length for timingSafeEqual — pad to same length first
+    var len = Math.max(aBuf.length, bBuf.length);
+    var aPad = Buffer.alloc(len);
+    var bPad = Buffer.alloc(len);
+    aBuf.copy(aPad);
+    bBuf.copy(bPad);
+    return crypto.timingSafeEqual(aPad, bPad) && aBuf.length === bBuf.length;
+  } catch (e) {
+    return false;
+  }
 }
 
 async function isOsuIdBlacklisted(fdb, osuIdStr) {
@@ -186,6 +242,57 @@ function hasSlur(text) {
   return SLUR_RE.test(String(text || ""));
 }
 
+function safeHttpUrl(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  try {
+    const u = new URL(s);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+    return s;
+  } catch (e) {
+    return "";
+  }
+}
+
+async function buildFeedList(fdb, me) {
+  const [postsSnap, likesSnap, commentsSnap] = await Promise.all([
+    fdb.ref("feed_posts").get(),
+    fdb.ref("feed_likes").get(),
+    fdb.ref("feed_comments").get(),
+  ]);
+  const raw = postsSnap.exists() ? postsSnap.val() : {};
+  const likesRoot = likesSnap.exists() ? likesSnap.val() : {};
+  const commentsRoot = commentsSnap.exists() ? commentsSnap.val() : {};
+
+  let rows = Object.entries(raw || {}).map(([id, p]) => Object.assign({}, p, { id }));
+  rows.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+  rows = rows.slice(0, 80);
+
+  const myId = me ? String(me.id) : null;
+
+  return rows.map(post => {
+    const likeObj = (likesRoot && likesRoot[post.id]) || {};
+    const likeCount = likeObj && typeof likeObj === "object" ? Object.keys(likeObj).length : 0;
+    const iLiked = !!(myId && likeObj && likeObj[myId]);
+
+    const comObj = (commentsRoot && commentsRoot[post.id]) || {};
+    let comments = Object.entries(comObj || {}).map(([cid, c]) => ({
+      id: cid,
+      user_id: c && c.user_id ? String(c.user_id) : "",
+      username: (c && c.username) || "unknown",
+      text: (c && c.text != null ? String(c.text) : "").slice(0, FEED_COMMENT_MAX),
+      created_at: c && c.created_at ? c.created_at : 0,
+    }));
+    comments.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+
+    return Object.assign({}, post, {
+      like_count: likeCount,
+      i_liked: iLiked,
+      comments,
+    });
+  });
+}
+
 // admin: search all dms for a substring (dedupe in+out copies of same send)
 async function adminSearchInboxMessages(keyword) {
   const q = String(keyword || "")
@@ -292,15 +399,25 @@ async function createAutoReport({ me, toUserId, toUser, where, text }) {
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
+// tourney pill options — on app.locals so every ejs template (and nested includes) sees them
+app.locals.TOURNEY_MODS_LIST = TOURNEY_MODS;
+app.locals.TOURNEY_SKILLSETS_LIST = TOURNEY_SKILLSETS;
+app.locals.TOURNEY_RANK_RANGES_LIST = TOURNEY_RANK_RANGES;
+
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, "public")));
+// note: express.static is registered after all routes (see bottom) so paths like /feed are never shadowed
 
 const SESSION_MAX_AGE_MS = parseInt(process.env.SESSION_MAX_AGE_MS || String(14 * 24 * 60 * 60 * 1000), 10);
 const SESSION_MAX_AGE_SEC = Math.floor(SESSION_MAX_AGE_MS / 1000);
 
+// refuse to start in production without a real secret — fallback dev key is not safe
+if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
+  console.error("[FATAL] SESSION_SECRET is not set in production. Set it in your environment and restart.");
+  process.exit(1);
+}
+
 const sessionOptions = {
-  // no need to set SESSION_SECRET in .env for local dev
-  secret: process.env.SESSION_SECRET || "osu-edating-local-dev-session-key",
+  secret: process.env.SESSION_SECRET || "osu-effriend-local-dev-session-key",
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -355,9 +472,9 @@ app.use(async (req, res, next) => {
           if (req.session) req.session.userId = ADMIN_OSU_ID;
         }
       }
-      if ((!req.session || !req.session.userId) && ADMIN_EMERGENCY_CODE_FOID) {
+      if ((!req.session || !req.session.userId) && ADMIN_EMERGENCY_CODE2) {
         const tokenF = cookies.admin_override_foid || "";
-        if (tokenF && isValidOwnerToken(ADMIN_EMERGENCY_CODE_FOID, tokenF)) {
+        if (tokenF && isValidOwnerToken(ADMIN_EMERGENCY_CODE2, tokenF)) {
           if (req.session) req.session.userId = ADMIN_SECOND_OSU_ID;
         }
       }
@@ -366,7 +483,15 @@ app.use(async (req, res, next) => {
     res.locals.me = null;
     res.locals.inboxUnread = null;
     res.locals.prefs = null;
+    res.locals.isStaff = false;
     res.locals.isAdmin = false;
+    res.locals.viewAsRegularUser = false;
+    res.locals.tSavedFilter = null;
+    res.locals.tSavedProfile = null;
+    // tourney options — on res.locals so parent ejs can pass into nested includes (nested locals often skip app.locals merge)
+    res.locals.tourneyModsList = TOURNEY_MODS;
+    res.locals.tourneySkillsetsList = TOURNEY_SKILLSETS;
+    res.locals.tourneyRankRangesList = TOURNEY_RANK_RANGES;
 
     if (req.session && req.session.userId) {
       const userId = String(req.session.userId);
@@ -406,13 +531,26 @@ app.use(async (req, res, next) => {
           badge_count: typeof user.badge_count === "number" ? user.badge_count : null,
           age: profile ? profile.age : null,
           bio: profile ? profile.bio : null,
+          // if they never set tourney_bio yet, fall back to friend bio so old accounts still work
+          tourney_bio: profile
+            ? (profile.tourney_bio != null && String(profile.tourney_bio).trim() !== ""
+                ? profile.tourney_bio
+                : profile.bio)
+            : null,
           gender: profile ? profile.gender : null,
           discord: profile ? profile.discord : null,
           display_name: profile ? profile.display_name : null,
           cute_tint: userHasCuteTint(user.username, profile ? profile.display_name : null),
         };
         res.locals.prefs = prefs;
-        res.locals.isAdmin = isAdmin(res.locals.me);
+        res.locals.isStaff = isAdmin(res.locals.me);
+        res.locals.isAdmin =
+          res.locals.isStaff && !(req.session && req.session.previewAsUser);
+        res.locals.viewAsRegularUser = !!(
+          req.session &&
+          req.session.previewAsUser &&
+          res.locals.isStaff
+        );
 
         // count unread messages
         let unread = 0;
@@ -444,7 +582,9 @@ app.use(async (req, res, next) => {
   } catch (e) {
     console.error(e);
     res.locals.me = null;
+    res.locals.isStaff = false;
     res.locals.isAdmin = false;
+    res.locals.viewAsRegularUser = false;
     res.locals.flash = null;
     res.locals.siteAnnouncement = null;
     next();
@@ -477,8 +617,8 @@ function redirectSameOriginRefererOrHome(req, res) {
 
 function readOnlyBlockWrites(req, res, next) {
   if (!SITE_READ_ONLY) return next();
-  // staff can do anything
-  if (res.locals.isAdmin) return next();
+  // staff can do anything (even while previewing as user in the ui)
+  if (res.locals.isStaff) return next();
 
   const p = req.path || "";
 
@@ -514,14 +654,11 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// lock down all /admin/... routes in one place (announcements, messages, wipe, etc.)
-function requireAdminSection(req, res, next) {
-  const p = req.path || "";
-  if (!p.startsWith("/admin/")) return next();
-  requireAuth(req, res, () => requireAdmin(req, res, next));
-}
+const adminRouter = express.Router();
+adminRouter.use(requireAuth);
+adminRouter.use(requireAdmin);
 
-app.use(requireAdminSection);
+// admin routes live on adminRouter + app.use("/admin", adminRouter) — fixes GET /admin reliably
 
 function requireAuthOrGuest(req, res, next) {
   if (req.session && req.session.userId) return next();
@@ -529,13 +666,22 @@ function requireAuthOrGuest(req, res, next) {
   return res.redirect("/enter");
 }
 
+// scores feed is osu accounts only (not guest browse)
+function requireSignedInForFeed(req, res, next) {
+  if (!req.session || !req.session.userId) {
+    req.session.flash = { type: "warn", message: "sign in with osu! to use the scores feed" };
+    return res.redirect("/");
+  }
+  next();
+}
+
 function requireProfile(req, res, next) {
   const me = res.locals.me;
   if (!me) return res.redirect("/");
-  if (!me.age || !me.bio || !me.gender) {
+  if (!me.age || !me.bio || !me.tourney_bio || !me.gender) {
     req.session.flash = {
       type: "warn",
-      message: "finish your profile first so ppl know who u are",
+      message: "finish ur profile first (both bios + age + gender)",
     };
     return res.redirect("/profile/edit");
   }
@@ -551,7 +697,56 @@ function escapeHtml(s) {
 }
 
 // home page is root index.html (same folder as Dockerfile) — inject flash for oauth errors etc.
-function sendHomeHtml(req, res) {
+// pull featured users from firebase — same logic as the api route but reusable
+async function getFeaturedUsers(userId, adminSeeAll) {
+  const fdb = rtdb();
+  const [usersSnap, profilesSnap, blocksSnap] = await Promise.all([
+    fdb.ref("users").get(),
+    fdb.ref("profiles").get(),
+    adminSeeAll ? Promise.resolve(null) : fdb.ref(`blocks/${userId}`).get(),
+  ]);
+
+  const usersObj = usersSnap.exists() ? usersSnap.val() : {};
+  const profilesObj = profilesSnap.exists() ? profilesSnap.val() : {};
+  const blocksObj = blocksSnap && blocksSnap.exists() ? blocksSnap.val() : {};
+  const blockedIds = adminSeeAll ? new Set() : new Set(Object.keys(blocksObj || {}));
+
+  let list = [];
+  for (const [id, u] of Object.entries(usersObj || {})) {
+    if (!u) continue;
+    if (String(id) === String(userId)) continue;
+    if (blockedIds.has(String(id))) continue;
+    const p = profilesObj ? profilesObj[id] : null;
+    if (!p) continue;
+    if (!adminSeeAll && (!p.age || !p.bio || !p.gender)) continue;
+
+    list.push({
+      id: String(id),
+      osu_id: u.osu_id,
+      username: u.username,
+      avatar_url: u.avatar_url || null,
+      country_code: u.country_code || null,
+      global_rank: u.global_rank || null,
+      badge_count: typeof u.badge_count === "number" ? u.badge_count : null,
+      age: p.age,
+      gender: p.gender || null,
+      bio: (p.bio || "").slice(0, 120),
+      cute_tint: userHasCuteTint(u.username, p.display_name),
+    });
+  }
+
+  // shuffle so it's different each page load
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = list[i];
+    list[i] = list[j];
+    list[j] = tmp;
+  }
+
+  return list.slice(0, 6);
+}
+
+async function sendHomeHtml(req, res) {
   const htmlPath = path.join(__dirname, "index.html");
   let html = fs.readFileSync(htmlPath, "utf8");
   let flash = res.locals.flash;
@@ -563,17 +758,25 @@ function sendHomeHtml(req, res) {
   let annBlock = "";
   if (ann && ann.text) {
     const until = new Date(ann.expires_at).toLocaleString();
-    annBlock = `<div class="site-announcement" role="status"><div class="site-announcement-inner"><span class="site-announcement-label">announcement</span><p class="site-announcement-text">${escapeHtml(ann.text)}</p><span class="site-announcement-until">shows until ${escapeHtml(until)}</span></div></div>`;
+    const annExp = Number(ann.expires_at);
+    annBlock = `<div class="site-announcement" role="status" data-announcement-expires="${Number.isFinite(annExp) ? annExp : ""}"><button type="button" class="site-announcement-close" aria-label="close announcement">&times;</button><div class="site-announcement-inner"><span class="site-announcement-label">announcement</span><p class="site-announcement-text">${escapeHtml(ann.text)}</p><span class="site-announcement-until">shows until ${escapeHtml(until)}</span></div></div>`;
   }
   html = html.replace("<!--ANNOUNCEMENT-->", annBlock);
   let roBlock = "";
   const showRoBanner =
-    SITE_READ_ONLY && !(res.locals.me && isAdmin(res.locals.me));
+    SITE_READ_ONLY &&
+    !(res.locals.isStaff && !(req.session && req.session.previewAsUser));
   if (showRoBanner) {
     roBlock =
-      '<div class="site-readonly-banner" role="status"><div class="site-readonly-inner">read-only mode — you can browse and sign in, but sending messages and saving changes are off</div></div>';
+      '<div class="site-readonly-banner" role="status"><div class="site-readonly-inner">read-only mode - browsing is enabled but you can not send messages</div></div>';
   }
   html = html.replace("<!--READONLY-->", roBlock);
+  let previewBlock = "";
+  if (res.locals.viewAsRegularUser) {
+    previewBlock =
+      '<div class="site-preview-banner" role="region" aria-label="preview mode"><div class="site-preview-inner"><span>viewing as a default user</span><form action="/admin/preview-as-user/end" method="post" class="inline"><button class="btn btn-primary btn-tiny" type="submit">back to admin</button></form></div></div>';
+  }
+  html = html.replace("<!--PREVIEW-->", previewBlock);
   if (flash) {
     html = html.replace(
       "<!--FLASH-->",
@@ -582,6 +785,23 @@ function sendHomeHtml(req, res) {
   } else {
     html = html.replace("<!--FLASH-->", "");
   }
+
+  // inject showcase data server-side so the client never needs to fetch it
+  let showcaseScript = "";
+  const userId = req.session && req.session.userId ? String(req.session.userId) : null;
+  if (userId) {
+    try {
+      const me = res.locals.me;
+      const adminSeeAll = me && isAdmin(me);
+      const users = await getFeaturedUsers(userId, adminSeeAll);
+      // safe to inject as json — no user-controlled html here
+      showcaseScript = `<script>window.__SHOWCASE__=${JSON.stringify(users)};</script>`;
+    } catch (e) {
+      // firebase hiccup — showcase just won't show, no big deal
+    }
+  }
+  html = html.replace("<!--SHOWCASE_DATA-->", showcaseScript);
+
   res.type("html").send(html);
 }
 
@@ -640,19 +860,19 @@ app.get("/api/featured", requireAuth, async (req, res) => {
       list[j] = tmp;
     }
 
-    res.json({ users: list.slice(0, 9) });
+    res.json({ users: list.slice(0, 6) });
   } catch (e) {
     console.error(e);
     res.status(500).json({ users: [] });
   }
 });
 
-app.get("/", (req, res) => {
-  sendHomeHtml(req, res);
+app.get("/", async (req, res) => {
+  await sendHomeHtml(req, res);
 });
 
-app.get("/index.html", (req, res) => {
-  sendHomeHtml(req, res);
+app.get("/index.html", async (req, res) => {
+  await sendHomeHtml(req, res);
 });
 
 app.get("/enter", (req, res) => {
@@ -661,21 +881,36 @@ app.get("/enter", (req, res) => {
   res.render("pages/enter", { title: "enter" });
 });
 
+app.get("/terms", (req, res) => {
+  res.render("pages/terms", { title: "terms of service" });
+});
+
+app.get("/privacy", (req, res) => {
+  res.render("pages/privacy", { title: "privacy policy" });
+});
+
+app.get("/disclaimer", (req, res) => {
+  res.render("pages/disclaimer", { title: "disclaimer" });
+});
+
 // emergency owner login (bypasses osu oauth during traffic)
 app.get("/emergency", (req, res) => {
   res.render("pages/emergency", { title: "emergency" });
 });
 
 app.post("/emergency-login", (req, res) => {
-  const code = (req.body.code || "").toString().trim();
-
-  if (!ADMIN_EMERGENCY_CODE) {
-    req.session.flash = { type: "error", message: "admin emergency code not set" };
+  // 5 attempts per 15 min per ip — brute force protection
+  if (checkIpRateLimit(req, "emergency-login", 5, 15 * 60 * 1000)) {
+    req.session.flash = { type: "error", message: "too many attempts, try later" };
     return res.redirect("/");
   }
 
-  if (code !== ADMIN_EMERGENCY_CODE) {
-    req.session.flash = { type: "error", message: "wrong code" };
+  const code = (req.body.code || "").toString().trim();
+
+  // always run the compare (even when code not set) to avoid timing leak
+  const valid = ADMIN_EMERGENCY_CODE && timingSafeEqual(code, ADMIN_EMERGENCY_CODE);
+  if (!valid) {
+    req.session.flash = { type: "error", message: "invalid" };
     return res.redirect("/emergency");
   }
 
@@ -692,30 +927,30 @@ app.post("/emergency-login", (req, res) => {
   });
 
   req.session.flash = { type: "ok", message: "owner login ok" };
-  return res.redirect("/preferences");
+  return res.redirect("/browse");
 });
 
-// second admin emergency (12742221)
 app.get("/emergency-foid", (req, res) => {
   res.render("pages/emergency_foid", { title: "emergency" });
 });
 
 app.post("/emergency-foid-login", (req, res) => {
-  const code = (req.body.code || "").toString().trim();
-
-  if (!ADMIN_EMERGENCY_CODE_FOID) {
-    req.session.flash = { type: "error", message: "foid emergency code not set" };
+  if (checkIpRateLimit(req, "emergency-foid-login", 5, 15 * 60 * 1000)) {
+    req.session.flash = { type: "error", message: "too many attempts, try later" };
     return res.redirect("/");
   }
 
-  if (code !== ADMIN_EMERGENCY_CODE_FOID) {
-    req.session.flash = { type: "error", message: "wrong code" };
+  const code = (req.body.code || "").toString().trim();
+
+  const valid = ADMIN_EMERGENCY_CODE2 && timingSafeEqual(code, ADMIN_EMERGENCY_CODE2);
+  if (!valid) {
+    req.session.flash = { type: "error", message: "invalid" };
     return res.redirect("/emergency-foid");
   }
 
   clearCookie(res, "admin_override");
   if (req.session) req.session.userId = ADMIN_SECOND_OSU_ID;
-  const token = makeOwnerToken(ADMIN_EMERGENCY_CODE_FOID);
+  const token = makeOwnerToken(ADMIN_EMERGENCY_CODE2);
   setCookie(res, "admin_override_foid", token, {
     path: "/",
     maxAgeSeconds: 7 * 24 * 60 * 60,
@@ -725,12 +960,19 @@ app.post("/emergency-foid-login", (req, res) => {
   });
 
   req.session.flash = { type: "ok", message: "admin login ok" };
-  return res.redirect("/preferences");
+  return res.redirect("/browse");
 });
 
 app.post("/enter", (req, res) => {
+  // rate limit: 10 attempts per 15 min per ip
+  if (checkIpRateLimit(req, "enter", 10, 15 * 60 * 1000)) {
+    req.session.flash = { type: "error", message: "too many attempts, try later" };
+    return res.redirect("/enter");
+  }
+
   const code = (req.body.code || "").toString().trim();
-  if (code === "taikichan") {
+  const valid = GUEST_CODE && timingSafeEqual(code, GUEST_CODE);
+  if (valid) {
     req.session.guestOk = true;
     req.session.flash = { type: "ok", message: "ok u can browse" };
     return res.redirect("/browse");
@@ -804,13 +1046,17 @@ app.get("/auth/osu/callback", async (req, res) => {
 
     req.session.userId = userId;
 
-    return res.redirect("/preferences");
+    return res.redirect("/browse");
   } catch (err) {
     console.error(err);
-    req.session.flash = {
-      type: "error",
-      message: "osu! login failed. too much traffic on the server just wait or try again",
-    };
+    const errText = err && err.message ? String(err.message) : String(err);
+    let msg = "osu! login failed. too much traffic on the server just wait or try again";
+    // token step uses id+secret — callback url being right doesnt fix invalid_client
+    if (errText.includes("invalid_client") || errText.includes("Client authentication failed")) {
+      msg =
+        "osu oauth: client id or client secret wrong in .env (must match the same app on osu). callback url only affects the authorize screen";
+    }
+    req.session.flash = { type: "error", message: msg };
     return res.redirect("/");
   }
 });
@@ -833,26 +1079,32 @@ app.post("/guest/exit", (req, res) => {
 app.post("/block", requireAuth, async (req, res) => {
   const me = res.locals.me;
   const blockUserId = (req.body.block_user_id || "").toString().trim();
-  const redirectTo = (req.body.redirect_to || "").toString().trim();
+  const redirectTo = safeRedirectPath(req.body.redirect_to, "/browse");
 
   if (!me) return res.redirect("/");
   if (!blockUserId) {
     req.session.flash = { type: "error", message: "nothing to block" };
-    return res.redirect(redirectTo || "/browse");
+    return res.redirect(redirectTo);
   }
   if (String(blockUserId) === String(me.id)) {
     req.session.flash = { type: "error", message: "u cant block urself" };
-    return res.redirect(redirectTo || "/browse");
+    return res.redirect(redirectTo);
+  }
+
+  // basic abuse prevention — 20 blocks per hour per user
+  if (checkRateLimit(String(me.id), "block", 20, 60 * 60 * 1000)) {
+    req.session.flash = { type: "error", message: "slow down, too many blocks" };
+    return res.redirect(redirectTo);
   }
 
   try {
     await rtdb().ref(`blocks/${String(me.id)}/${String(blockUserId)}`).set(true);
     req.session.flash = { type: "ok", message: "blocked" };
-    return res.redirect(redirectTo || "/browse");
+    return res.redirect(redirectTo);
   } catch (e) {
     console.error(e);
     req.session.flash = { type: "error", message: "failed to block" };
-    return res.redirect(redirectTo || "/browse");
+    return res.redirect(redirectTo);
   }
 });
 
@@ -861,6 +1113,8 @@ app.post("/report", requireAuth, async (req, res) => {
   const toUserId = (req.body.to_user_id || "").toString().trim();
   const bodyRaw = (req.body.body || "").toString().trim();
   const body = bodyRaw.slice(0, 500);
+  // track if this report came from the inbox so admins can pull up the chat log
+  const fromInbox = req.body.from_inbox === "1";
 
   if (!me) return res.redirect("/");
   if (!toUserId) {
@@ -870,6 +1124,12 @@ app.post("/report", requireAuth, async (req, res) => {
   if (!body || body.length < 3) {
     req.session.flash = { type: "error", message: "report is too short" };
     return res.redirect("/browse");
+  }
+
+  // 5 reports per hour per user — prevents spam
+  if (checkRateLimit(String(me.id), "report", 5, 60 * 60 * 1000)) {
+    req.session.flash = { type: "error", message: "slow down, too many reports" };
+    return res.redirect(fromInbox ? `/inbox/${toUserId}` : "/browse");
   }
 
   try {
@@ -900,11 +1160,13 @@ app.post("/report", requireAuth, async (req, res) => {
       to_osu_id: toUser ? toUser.osu_id : null,
       to_username: toUser ? toUser.username : null,
       body,
+      from_inbox: fromInbox || false,
       created_at: now,
     });
 
     req.session.flash = { type: "ok", message: "report sent" };
-    return res.redirect("/browse");
+    // if they reported from inbox, send them back there instead of browse
+    return res.redirect(fromInbox ? `/inbox/${toUserId}` : "/browse");
   } catch (e) {
     console.error(e);
     req.session.flash = { type: "error", message: "failed to send report" };
@@ -939,30 +1201,141 @@ app.get("/preferences", requireAuth, async (req, res) => {
       });
     }
 
-    let reports = [];
-    if (isAdmin(me)) {
-      const repSnap = await fdb.ref(`reports/${ADMIN_OSU_ID}`).get();
-      const repObj = repSnap.exists() ? repSnap.val() : {};
-      reports = Object.values(repObj || {});
-      reports.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
-      reports = reports.slice(0, 50);
+    // load saved prefs so the form shows current values
+    const [prefsSnap, tourneyFilterSnap] = await Promise.all([
+      fdb.ref(`prefs/${userId}`).get(),
+      fdb.ref(`tourney_filters/${userId}`).get(),
+    ]);
+    const prefsData = prefsSnap.exists() ? prefsSnap.val() : null;
+    const tourneyFilterData = tourneyFilterSnap.exists() ? tourneyFilterSnap.val() : null;
+
+    let prefs = null;
+    if (prefsData) {
+      prefs = {
+        min_age: prefsData.min_age != null ? Number(prefsData.min_age) : null,
+        max_age: prefsData.max_age != null ? Number(prefsData.max_age) : null,
+        genders: Array.isArray(prefsData.genders) ? prefsData.genders : [],
+        rank_max: prefsData.rank_max != null ? Number(prefsData.rank_max) : null,
+      };
     }
 
-    res.render("pages/preferences", { title: "preferences", blockedUsers, reports });
+    let tourneyFilterPrefs = null;
+    if (tourneyFilterData) {
+      tourneyFilterPrefs = {
+        mods: Array.isArray(tourneyFilterData.mods) ? tourneyFilterData.mods : [],
+        skillsets: Array.isArray(tourneyFilterData.skillsets) ? tourneyFilterData.skillsets : [],
+        rank_ranges: Array.isArray(tourneyFilterData.rank_ranges) ? tourneyFilterData.rank_ranges : [],
+      };
+    }
+
+    res.locals.tSavedFilter = tourneyFilterPrefs;
+    res.render("pages/preferences", {
+      title: "preferences",
+      blockedUsers,
+      prefs,
+      isAdmin: !!res.locals.isAdmin,
+    });
   } catch (e) {
     console.error(e);
-    res.render("pages/preferences", { title: "preferences", blockedUsers: [], reports: [] });
+    res.locals.tSavedFilter = null;
+    res.render("pages/preferences", {
+      title: "preferences",
+      blockedUsers: [],
+      prefs: null,
+      isAdmin: !!res.locals.isAdmin,
+    });
   }
 });
 
-app.post("/admin/announcement", async (req, res) => {
+// admin tools dashboard
+adminRouter.get("/", (req, res) => {
+  res.render("pages/admin", { title: "admin" });
+});
+
+adminRouter.get("/reports", async (req, res) => {
+  try {
+    const fdb = rtdb();
+    const repSnap = await fdb.ref(`reports/${ADMIN_OSU_ID}`).get();
+    const repObj = repSnap.exists() ? repSnap.val() : {};
+    let reports = Object.values(repObj || {});
+    reports.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+    res.render("pages/admin_reports", { title: "reports", reports });
+  } catch (e) {
+    console.error(e);
+    res.render("pages/admin_reports", { title: "reports", reports: [] });
+  }
+});
+
+// show banned users list
+adminRouter.get("/banned", async (req, res) => {
+  try {
+    const fdb = rtdb();
+    // bans live in two places: osu_bans (underage auto-bans) and site/blacklist (wipe bans)
+    const [osuBansSnap, blacklistSnap, usersSnap] = await Promise.all([
+      fdb.ref("osu_bans").get(),
+      fdb.ref("site/blacklist").get(),
+      fdb.ref("users").get(),
+    ]);
+    const osuBansObj = osuBansSnap.exists() ? osuBansSnap.val() : {};
+    const blacklistObj = blacklistSnap.exists() ? blacklistSnap.val() : {};
+    const usersObj = usersSnap.exists() ? usersSnap.val() : {};
+
+    // merge both ban sources into one map keyed by id
+    const merged = {};
+    for (const [id, data] of Object.entries(osuBansObj || {})) {
+      if (!data) continue;
+      merged[id] = { at: data.at || null, reason: data.reason || null };
+    }
+    for (const [id] of Object.entries(blacklistObj || {})) {
+      if (!merged[id]) merged[id] = { at: null, reason: "wiped/banned by admin" };
+    }
+
+    const bans = [];
+    for (const [id, data] of Object.entries(merged)) {
+      const u = usersObj[id] || {};
+      bans.push({
+        id,
+        osu_id: u.osu_id ? String(u.osu_id) : id,
+        username: u.username || null,
+        at: data.at,
+        reason: data.reason,
+      });
+    }
+    // newest bans first, nulls at the end
+    bans.sort((a, b) => (b.at || 0) - (a.at || 0));
+
+    res.render("pages/admin_banned", { title: "banned users", bans });
+  } catch (e) {
+    console.error(e);
+    res.render("pages/admin_banned", { title: "banned users", bans: [] });
+  }
+});
+
+// unban a user (remove from osu_bans)
+adminRouter.post("/unban", async (req, res) => {
+  const osuId = String(req.body.osu_id || "").trim();
+  if (!osuId) {
+    req.session.flash = { type: "error", message: "no user id given" };
+    return res.redirect("/admin/banned");
+  }
+  try {
+    await rtdb().ref(`osu_bans/${osuId}`).remove();
+    req.session.flash = { type: "success", message: `unbanned ${osuId}` };
+  } catch (e) {
+    console.error(e);
+    req.session.flash = { type: "error", message: "something went wrong" };
+  }
+  res.redirect("/admin/banned");
+});
+
+adminRouter.post("/announcement", async (req, res) => {
   const me = res.locals.me;
   const text = (req.body.announcement_text || "").toString().trim().slice(0, ANNOUNCE_TEXT_MAX);
   const hours = parseFloat(String(req.body.duration_hours || "").trim());
 
   if (!text) {
     req.session.flash = { type: "error", message: "write something or use clear announcement" };
-    return res.redirect("/preferences");
+    return res.redirect("/admin");
   }
 
   if (!Number.isFinite(hours) || hours < ANNOUNCE_MIN_HOURS || hours > ANNOUNCE_MAX_HOURS) {
@@ -970,7 +1343,7 @@ app.post("/admin/announcement", async (req, res) => {
       type: "error",
       message: `duration must be ${ANNOUNCE_MIN_HOURS}–${ANNOUNCE_MAX_HOURS} hours`,
     };
-    return res.redirect("/preferences");
+    return res.redirect("/admin");
   }
 
   const now = Date.now();
@@ -987,10 +1360,10 @@ app.post("/admin/announcement", async (req, res) => {
     console.error(e);
     req.session.flash = { type: "error", message: "failed to save announcement" };
   }
-  return res.redirect("/preferences");
+  return res.redirect("/admin");
 });
 
-app.post("/admin/announcement/clear", async (req, res) => {
+adminRouter.post("/announcement/clear", async (req, res) => {
   try {
     await rtdb().ref("site/announcement").set(null);
     req.session.flash = { type: "ok", message: "announcement cleared" };
@@ -998,21 +1371,62 @@ app.post("/admin/announcement/clear", async (req, res) => {
     console.error(e);
     req.session.flash = { type: "error", message: "failed to clear" };
   }
-  return res.redirect("/preferences");
+  return res.redirect("/admin");
 });
 
-app.post("/admin/reports/done", async (req, res) => {
+adminRouter.post("/reports/done", async (req, res) => {
   const reportId = (req.body.report_id || "").toString().trim();
-  if (!reportId) return res.redirect("/preferences");
+  if (!reportId) return res.redirect("/admin");
 
   try {
     await rtdb().ref(`reports/${ADMIN_OSU_ID}/${reportId}`).set(null);
     req.session.flash = { type: "ok", message: "report removed" };
-    return res.redirect("/preferences");
+    return res.redirect("/admin");
   } catch (e) {
     console.error(e);
     req.session.flash = { type: "error", message: "failed to remove report" };
-    return res.redirect("/preferences");
+    return res.redirect("/admin");
+  }
+});
+
+adminRouter.post("/reports/ban", async (req, res) => {
+  const reportId = (req.body.report_id || "").toString().trim();
+  const banUserId = (req.body.ban_user_id || "").toString().trim();
+  const banOsuId = (req.body.ban_osu_id || "").toString().trim();
+
+  // reports sometimes have internal user id, sometimes just osu id
+  const targetId = banUserId || banOsuId;
+  if (!targetId) {
+    req.session.flash = { type: "error", message: "no user id to ban" };
+    return res.redirect("/admin/reports");
+  }
+
+  if (ADMIN_OSU_IDS.has(String(targetId))) {
+    req.session.flash = { type: "error", message: "cant ban an admin" };
+    return res.redirect("/admin/reports");
+  }
+
+  try {
+    const now = Date.now();
+    const fdb = rtdb();
+
+    // mark them banned (used by login + request middleware)
+    await fdb.ref(`osu_bans/${String(targetId)}`).set({
+      at: now,
+      reason: "admin_report_ban",
+    });
+
+    // remove this report too so it doesnt sit there forever
+    if (reportId) {
+      await fdb.ref(`reports/${ADMIN_OSU_ID}/${reportId}`).set(null);
+    }
+
+    req.session.flash = { type: "ok", message: `banned ${targetId}` };
+    return res.redirect("/admin/reports");
+  } catch (e) {
+    console.error(e);
+    req.session.flash = { type: "error", message: "failed to ban user" };
+    return res.redirect("/admin/reports");
   }
 });
 
@@ -1062,12 +1476,18 @@ app.post("/preferences", requireAuth, async (req, res) => {
   else if (typeof gendersRaw === "string" && gendersRaw) genders = [gendersRaw];
   genders = genders.filter(g => GENDERS.includes(g));
 
-  if (minAge !== null && (!Number.isFinite(minAge) || minAge < 18 || minAge > 120)) {
-    req.session.flash = { type: "error", message: "min age has to be 18-120 (or leave blank)" };
+  if (minAge !== null && (!Number.isFinite(minAge) || minAge < PREF_AGE_MIN || minAge > PREF_AGE_MAX)) {
+    req.session.flash = {
+      type: "error",
+      message: `min age has to be ${PREF_AGE_MIN}-${PREF_AGE_MAX} (or leave blank)`,
+    };
     return res.redirect("/preferences");
   }
-  if (maxAge !== null && (!Number.isFinite(maxAge) || maxAge < 18 || maxAge > 120)) {
-    req.session.flash = { type: "error", message: "max age has to be 18-120 (or leave blank)" };
+  if (maxAge !== null && (!Number.isFinite(maxAge) || maxAge < PREF_AGE_MIN || maxAge > PREF_AGE_MAX)) {
+    req.session.flash = {
+      type: "error",
+      message: `max age has to be ${PREF_AGE_MIN}-${PREF_AGE_MAX} (or leave blank)`,
+    };
     return res.redirect("/preferences");
   }
   if (minAge !== null && maxAge !== null && minAge > maxAge) {
@@ -1094,28 +1514,88 @@ app.post("/preferences", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/profile", requireAuth, (req, res) => {
-  res.render("pages/profile_view", { title: "profile" });
+app.get("/profile", requireAuth, async (req, res) => {
+  const mode = req.query.mode === "tourney" ? "tourney" : "friend";
+  try {
+    const userId = String(req.session.userId);
+    const fdb = rtdb();
+    const tSnap = await fdb.ref(`tourney_prefs/${userId}`).get();
+    const rawTourney = tSnap.exists() ? tSnap.val() : null;
+    let tourneyPrefs = null;
+    if (rawTourney) {
+      tourneyPrefs = {
+        mods: Array.isArray(rawTourney.mods) ? rawTourney.mods : [],
+        skillsets: Array.isArray(rawTourney.skillsets) ? rawTourney.skillsets : [],
+        rank_ranges: Array.isArray(rawTourney.rank_ranges) ? rawTourney.rank_ranges : [],
+      };
+    }
+    res.render("pages/profile_view", { title: "profile", mode, tourneyPrefs });
+  } catch (e) {
+    console.error(e);
+    res.render("pages/profile_view", { title: "profile", mode, tourneyPrefs: null });
+  }
 });
 
-app.get("/profile/edit", requireAuth, (req, res) => {
-  res.render("pages/profile", { title: "edit profile" });
+app.get("/profile/tourney", requireAuth, async (req, res) => {
+  try {
+    const userId = String(req.session.userId);
+    const fdb = rtdb();
+    const tSnap = await fdb.ref(`tourney_prefs/${userId}`).get();
+    const rawTourney = tSnap.exists() ? tSnap.val() : null;
+    let tourneyPrefs = null;
+    if (rawTourney) {
+      tourneyPrefs = {
+        mods: Array.isArray(rawTourney.mods) ? rawTourney.mods : [],
+        skillsets: Array.isArray(rawTourney.skillsets) ? rawTourney.skillsets : [],
+        rank_ranges: Array.isArray(rawTourney.rank_ranges) ? rawTourney.rank_ranges : [],
+      };
+    }
+    res.render("pages/profile_view", { title: "profile", mode: "tourney", tourneyPrefs });
+  } catch (e) {
+    console.error(e);
+    res.render("pages/profile_view", { title: "profile", mode: "tourney", tourneyPrefs: null });
+  }
+});
+
+app.get("/profile/edit", requireAuth, async (req, res) => {
+  try {
+    const userId = String(req.session.userId);
+    const fdb = rtdb();
+    const tSnap = await fdb.ref(`tourney_prefs/${userId}`).get();
+    const rawTourney = tSnap.exists() ? tSnap.val() : null;
+    // same shape as /preferences so the shared partial checks work
+    let tourneyPrefs = null;
+    if (rawTourney) {
+      tourneyPrefs = {
+        mods: Array.isArray(rawTourney.mods) ? rawTourney.mods : [],
+        skillsets: Array.isArray(rawTourney.skillsets) ? rawTourney.skillsets : [],
+        rank_ranges: Array.isArray(rawTourney.rank_ranges) ? rawTourney.rank_ranges : [],
+      };
+    }
+    res.locals.tSavedProfile = tourneyPrefs;
+    res.render("pages/profile", { title: "edit profile" });
+  } catch (e) {
+    res.locals.tSavedProfile = null;
+    res.render("pages/profile", { title: "edit profile" });
+  }
 });
 
 app.post("/profile", requireAuth, async (req, res) => {
   const ageRaw = (req.body.age || "").toString().trim();
   const bioRaw = (req.body.bio || "").toString().trim();
+  const tourneyBioRaw = (req.body.tourney_bio || "").toString().trim();
   const genderRaw = (req.body.gender || "").toString().trim();
   const discordRaw = (req.body.discord || "").toString().trim();
   const displayNameRaw = (req.body.display_name || "").toString().trim();
 
   const age = parseInt(ageRaw, 10);
   const bio = bioRaw.slice(0, BIO_MAX);
+  const tourney_bio = tourneyBioRaw.slice(0, BIO_MAX);
   const gender = GENDERS.includes(genderRaw) ? genderRaw : null;
   const discord = discordRaw.slice(0, 64);
   const displayName = displayNameRaw.slice(0, 40);
 
-  if (hasSlur(bioRaw) || hasSlur(discordRaw) || hasSlur(displayNameRaw)) {
+  if (hasSlur(bioRaw) || hasSlur(tourneyBioRaw) || hasSlur(discordRaw) || hasSlur(displayNameRaw)) {
     // auto-report and block saving
     try {
       await createAutoReport({
@@ -1164,7 +1644,15 @@ app.post("/profile", requireAuth, async (req, res) => {
   if (!bio || bio.length < 5) {
     req.session.flash = {
       type: "error",
-      message: "bio is too short. give ppl something to work with",
+      message: "friend finder bio is too short. give ppl something to work with",
+    };
+    return res.redirect("/profile");
+  }
+
+  if (!tourney_bio || tourney_bio.length < 5) {
+    req.session.flash = {
+      type: "error",
+      message: "tourney teammate bio is too short too",
     };
     return res.redirect("/profile");
   }
@@ -1173,6 +1661,13 @@ app.post("/profile", requireAuth, async (req, res) => {
     req.session.flash = {
       type: "warn",
       message: `bio was too long so we cut it to ${BIO_MAX} chars`,
+    };
+  }
+
+  if (tourneyBioRaw.length > BIO_MAX) {
+    req.session.flash = {
+      type: "warn",
+      message: `tourney bio was too long so we cut it to ${BIO_MAX} chars`,
     };
   }
 
@@ -1190,13 +1685,14 @@ app.post("/profile", requireAuth, async (req, res) => {
     await rtdb().ref(`profiles/${userId}`).set({
       age,
       bio,
+      tourney_bio,
       gender,
       discord: discord || null,
       display_name: displayName || null,
       updated_at: now,
     });
     req.session.flash = { type: "ok", message: "profile saved" };
-    return res.redirect("/browse");
+    return res.redirect("/profile");
   } catch (e) {
     console.error(e);
     req.session.flash = { type: "error", message: "failed to save profile" };
@@ -1216,9 +1712,14 @@ async function cleanupLongBios() {
   for (const [userId, p] of Object.entries(obj || {})) {
     if (!p) continue;
     const bio = (p.bio || "").toString();
+    const tb = (p.tourney_bio || "").toString();
     if (bio && bio.length > BIO_MAX) {
-      // wipe their bio if it's too long
       updates[`profiles/${userId}/bio`] = "";
+      updates[`profiles/${userId}/updated_at`] = now;
+      wiped += 1;
+    }
+    if (tb && tb.length > BIO_MAX) {
+      updates[`profiles/${userId}/tourney_bio`] = "";
       updates[`profiles/${userId}/updated_at`] = now;
       wiped += 1;
     }
@@ -1231,21 +1732,21 @@ async function cleanupLongBios() {
   return wiped;
 }
 
-app.post("/admin/cleanup-bios", async (req, res) => {
+adminRouter.post("/cleanup-bios", async (req, res) => {
   try {
     const wiped = await cleanupLongBios();
     req.session.flash = { type: "ok", message: `cleaned ${wiped} bios` };
-    return res.redirect("/preferences");
+    return res.redirect("/admin");
   } catch (e) {
     console.error(e);
     req.session.flash = { type: "error", message: "failed to clean bios" };
-    return res.redirect("/preferences");
+    return res.redirect("/admin");
   }
 });
 
-app.post("/admin/wipe-user", async (req, res) => {
+adminRouter.post("/wipe-user", async (req, res) => {
   const q = (req.body.q || "").toString().trim();
-  if (!q) return res.redirect("/preferences");
+  if (!q) return res.redirect("/admin");
 
   try {
     const fdb = rtdb();
@@ -1279,12 +1780,12 @@ app.post("/admin/wipe-user", async (req, res) => {
 
     if (!targetId) {
       req.session.flash = { type: "error", message: "user not found" };
-      return res.redirect("/preferences");
+      return res.redirect("/admin");
     }
 
     if (ADMIN_OSU_IDS.has(String(targetId))) {
       req.session.flash = { type: "error", message: "cant wipe an admin" };
-      return res.redirect("/preferences");
+      return res.redirect("/admin");
     }
 
     const updates = {};
@@ -1300,7 +1801,6 @@ app.post("/admin/wipe-user", async (req, res) => {
     // NOTE: we do NOT scan/delete messages in every inbox here anymore.
     // that gets huge and times out on bigger databases.
     // instead we "tombstone" them and hide them in the UI (wiped/{id}=true).
-    let inboxDeletes = 0;
 
     // remove reports involving them
     const repSnap = await fdb.ref(`reports/${ADMIN_OSU_ID}`).get();
@@ -1316,15 +1816,15 @@ app.post("/admin/wipe-user", async (req, res) => {
     await chunkedUpdate(updates, 400);
 
     req.session.flash = { type: "ok", message: `wiped user ${targetId}` };
-    return res.redirect("/preferences");
+    return res.redirect("/admin");
   } catch (e) {
     console.error("wipe user failed", e);
     req.session.flash = { type: "error", message: "failed to wipe user" };
-    return res.redirect("/preferences");
+    return res.redirect("/admin");
   }
 });
 
-app.get("/admin/messages", async (req, res) => {
+adminRouter.get("/messages", async (req, res) => {
   const rawQ = String(req.query.q || "").trim();
   if (!rawQ) {
     return res.render("pages/admin_message_search", {
@@ -1358,7 +1858,7 @@ app.get("/admin/messages", async (req, res) => {
 });
 
 // full chat between two accounts — admins only (requireAdmin before any data load)
-app.get("/admin/messages/thread", async (req, res) => {
+adminRouter.get("/messages/thread", async (req, res) => {
   const a = String(req.query.a || "").trim();
   const b = String(req.query.b || "").trim();
   const returnQ = String(req.query.return_q || "").trim();
@@ -1404,9 +1904,9 @@ app.get("/admin/messages/thread", async (req, res) => {
   }
 });
 
-app.get("/admin/view-profile", async (req, res) => {
+adminRouter.get("/view-profile", async (req, res) => {
   const q = String(req.query.q || "").trim();
-  if (!q) return res.redirect("/preferences");
+  if (!q) return res.redirect("/admin");
 
   try {
     const fdb = rtdb();
@@ -1434,20 +1934,95 @@ app.get("/admin/view-profile", async (req, res) => {
         profile: null,
         prefs: null,
         cute_tint: false,
+        adminViewUserId: null,
+        convoRows: [],
+        recentMessages: [],
       });
     }
 
-    const [profileSnap, prefsSnap] = await Promise.all([
+    const [profileSnap, prefsSnap, inboxSnap] = await Promise.all([
       fdb.ref(`profiles/${targetId}`).get(),
       fdb.ref(`prefs/${targetId}`).get(),
+      fdb.ref(`inbox/${targetId}`).get(),
     ]);
 
     const user = usersObj[targetId] || null;
     const profile = profileSnap.exists() ? profileSnap.val() : null;
     const prefs = prefsSnap.exists() ? prefsSnap.val() : null;
+    const inboxObj = inboxSnap.exists() ? inboxSnap.val() : {};
+    const allMessages = Object.values(inboxObj || {}).filter(Boolean);
+
+    const convoMap = {};
+    for (const m of allMessages) {
+      const dir = m.direction === "out" ? "out" : "in";
+      const otherId = dir === "out" ? String(m.to_user_id || "") : String(m.from_user_id || "");
+      if (!otherId) continue;
+
+      const otherUser = usersObj[otherId] || null;
+      const nameFromMsg = dir === "out" ? (m.to_username || "") : (m.from_username || "");
+      const avatarFromMsg = dir === "out" ? (m.to_avatar_url || null) : (m.from_avatar_url || null);
+
+      if (!convoMap[otherId]) {
+        convoMap[otherId] = {
+          other_id: otherId,
+          name: nameFromMsg || (otherUser && otherUser.username ? otherUser.username : `id ${otherId}`),
+          avatar_url: avatarFromMsg || (otherUser && otherUser.avatar_url ? otherUser.avatar_url : null),
+          last_body: "",
+          last_at: 0,
+          unread: 0,
+          total: 0,
+        };
+      }
+
+      const c = convoMap[otherId];
+      const at = Number(m.created_at || 0);
+      c.total += 1;
+      if (dir !== "out" && !m.read_at) c.unread += 1;
+
+      if (at >= (c.last_at || 0)) {
+        c.last_at = at;
+        c.last_body = (m.body || "").toString();
+        c.name = nameFromMsg || c.name;
+        c.avatar_url = avatarFromMsg || c.avatar_url;
+      }
+    }
+
+    const convoRows = Object.values(convoMap).sort((a, b) => (b.last_at || 0) - (a.last_at || 0));
+
+    const recentMessages = allMessages
+      .map(m => {
+        const dir = m.direction === "out" ? "out" : "in";
+        const otherId = dir === "out" ? String(m.to_user_id || "") : String(m.from_user_id || "");
+        const otherUser = usersObj[otherId] || null;
+        const nameFromMsg = dir === "out" ? (m.to_username || "") : (m.from_username || "");
+        // pick correct avatar: for incoming the sender is the other person, for outgoing the sender is the viewed user
+        const otherAvatarFromMsg = dir === "out" ? (m.to_avatar_url || null) : (m.from_avatar_url || null);
+        const otherAvatar = otherAvatarFromMsg || (otherUser && otherUser.avatar_url ? otherUser.avatar_url : null);
+        return {
+          id: String(m.id || ""),
+          dir,
+          other_id: otherId,
+          other_name: nameFromMsg || (otherUser && otherUser.username ? otherUser.username : (otherId ? `id ${otherId}` : "unknown")),
+          other_avatar_url: otherAvatar,
+          body: (m.body || "").toString(),
+          created_at: Number(m.created_at || 0),
+          read_at: m.read_at || null,
+        };
+      })
+      .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
+      .slice(0, 80);
 
     const cute_tint = user ? userHasCuteTint(user.username, profile ? profile.display_name : null) : false;
-    return res.render("pages/admin_view_profile", { title: "admin view", user, profile, prefs, cute_tint });
+    return res.render("pages/admin_view_profile", {
+      title: "admin view",
+      user,
+      profile,
+      prefs,
+      cute_tint,
+      adminViewUserId: targetId,
+      convoRows,
+      recentMessages,
+    });
   } catch (e) {
     console.error(e);
     return res.render("pages/admin_view_profile", {
@@ -1456,12 +2031,15 @@ app.get("/admin/view-profile", async (req, res) => {
       profile: null,
       prefs: null,
       cute_tint: false,
+      adminViewUserId: null,
+      convoRows: [],
+      recentMessages: [],
     });
   }
 });
 
-// all registered users — admin only (requireAdminSection)
-app.get("/admin/users", async (req, res) => {
+// all registered users — admin only
+adminRouter.get("/users", async (req, res) => {
   const qRaw = String(req.query.q || "").trim();
   const qLower = qRaw.toLowerCase();
 
@@ -1538,22 +2116,91 @@ app.get("/admin/users", async (req, res) => {
   }
 });
 
+adminRouter.post("/preview-as-user", (req, res) => {
+  req.session.previewAsUser = true;
+  req.session.flash = {
+    type: "info",
+    message: "viewing as a default user — use the bar at the top to go back",
+  };
+  return res.redirect("/browse");
+});
+
+adminRouter.post("/preview-as-user/end", (req, res) => {
+  req.session.previewAsUser = false;
+  req.session.flash = { type: "ok", message: "back to admin view" };
+  return res.redirect("/admin");
+});
+
+app.use("/admin", adminRouter);
+
+app.post("/tourney-preferences", requireAuth, async (req, res) => {
+  const userId = String(req.session.userId);
+  const fdb = rtdb();
+  const kind = req.body.tourney_kind === "filter" ? "filter" : "profile";
+
+  // parse arrays from form — express gives string if one selected, array if multiple
+  function toArr(raw, allowed) {
+    var vals = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+    return vals.map(v => String(v)).filter(v => allowed.includes(v));
+  }
+
+  const mods = toArr(req.body.tourney_mods, TOURNEY_MODS);
+  const skillsets = toArr(req.body.tourney_skillsets, TOURNEY_SKILLSETS);
+  const rank_ranges = toArr(req.body.tourney_rank_ranges, TOURNEY_RANK_RANGES);
+
+  try {
+    const savePath = kind === "filter" ? `tourney_filters/${userId}` : `tourney_prefs/${userId}`;
+    await fdb.ref(savePath).set({ mods, skillsets, rank_ranges, updated_at: Date.now() });
+    req.session.flash = {
+      type: "ok",
+      message: kind === "filter" ? "tourney browse filters saved" : "tourney profile setup saved",
+    };
+  } catch (e) {
+    console.error(e);
+    req.session.flash = {
+      type: "error",
+      message: kind === "filter" ? "failed to save tourney browse filters" : "failed to save tourney profile setup",
+    };
+  }
+  var back = safeRedirectPath(req.body.tourney_redirect, "/preferences");
+  res.redirect(back);
+});
+
 app.get("/browse", requireAuthOrGuest, async (req, res) => {
   const me = res.locals.me;
   const fdb = rtdb();
   const prefs = res.locals.prefs || null;
-  // both site admins: no block/pref filter, no 50 cap — see everyone
   const isAllAccess = me && isAdmin(me);
+  const mode = req.query.mode === "tourney" ? "tourney" : "friend";
+  let myTourneyFilters = null;
 
-  const [usersSnap, profilesSnap, allPrefsSnap] = await Promise.all([
+  if (me) {
+    try {
+      const myFilterSnap = await fdb.ref(`tourney_filters/${String(me.id)}`).get();
+      const rawMine = myFilterSnap.exists() ? myFilterSnap.val() : null;
+      if (rawMine) {
+        myTourneyFilters = {
+          mods: Array.isArray(rawMine.mods) ? rawMine.mods : [],
+          skillsets: Array.isArray(rawMine.skillsets) ? rawMine.skillsets : [],
+          rank_ranges: Array.isArray(rawMine.rank_ranges) ? rawMine.rank_ranges : [],
+        };
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  const [usersSnap, profilesSnap, allPrefsSnap, allTourneyPrefsSnap] = await Promise.all([
     fdb.ref("users").get(),
     fdb.ref("profiles").get(),
     fdb.ref("prefs").get(),
+    fdb.ref("tourney_prefs").get(),
   ]);
 
   const usersObj = usersSnap.exists() ? usersSnap.val() : {};
   const profilesObj = profilesSnap.exists() ? profilesSnap.val() : {};
   const prefsAll = allPrefsSnap.exists() ? allPrefsSnap.val() : {};
+  const tourneyPrefsAll = allTourneyPrefsSnap.exists() ? allTourneyPrefsSnap.val() : {};
 
   const out = [];
   for (const [id, u] of Object.entries(usersObj || {})) {
@@ -1572,6 +2219,15 @@ app.get("/browse", requireAuthOrGuest, async (req, res) => {
         }
       : null;
 
+    const rawTourney = tourneyPrefsAll[id] || null;
+    const tourney_prefs = rawTourney
+      ? {
+          mods: Array.isArray(rawTourney.mods) ? rawTourney.mods : [],
+          skillsets: Array.isArray(rawTourney.skillsets) ? rawTourney.skillsets : [],
+          rank_ranges: Array.isArray(rawTourney.rank_ranges) ? rawTourney.rank_ranges : [],
+        }
+      : null;
+
     out.push({
       id,
       osu_id: u.osu_id,
@@ -1583,9 +2239,15 @@ app.get("/browse", requireAuthOrGuest, async (req, res) => {
       badge_count: typeof u.badge_count === "number" ? u.badge_count : null,
       age: p.age,
       bio: (p.bio || "").slice(0, BIO_MAX),
+      tourney_bio: (p.tourney_bio != null && String(p.tourney_bio).trim() !== ""
+        ? p.tourney_bio
+        : p.bio || ""
+      ).slice(0, BIO_MAX),
+      discord: p.discord || null,
       gender: p.gender || null,
       updated_at: p.updated_at || 0,
       their_prefs,
+      tourney_prefs,
       cute_tint: userHasCuteTint(u.username, p.display_name),
     });
   }
@@ -1599,30 +2261,197 @@ app.get("/browse", requireAuthOrGuest, async (req, res) => {
     baseList = out.filter(u => !blockedIds.has(String(u.id)));
   }
 
-  // apply your preferences if set
   let filtered = baseList;
-  if (prefs && !isAllAccess) {
+
+  if (mode === "tourney") {
+    // tourney mode: only show people who have at least one tourney pref set
     filtered = baseList.filter(u => {
-      if (!u) return false;
-      if (!u.age || !u.gender) return false;
-      if (prefs.min_age !== null && typeof prefs.min_age === "number" && u.age < prefs.min_age) return false;
-      if (prefs.max_age !== null && typeof prefs.max_age === "number" && u.age > prefs.max_age) return false;
-      if (Array.isArray(prefs.genders) && prefs.genders.length > 0) {
-        if (!prefs.genders.includes(u.gender)) return false;
-      }
-      if (prefs.rank_max != null && typeof prefs.rank_max === "number") {
-        const gr = u.global_rank;
-        if (gr == null || gr > prefs.rank_max) return false;
-      }
-      return true;
+      const tp = u.tourney_prefs;
+      if (!tp) return false;
+      return (tp.mods && tp.mods.length > 0) || (tp.skillsets && tp.skillsets.length > 0) || (tp.rank_ranges && tp.rank_ranges.length > 0);
     });
+
+    // if viewer set tourney filters, only show profiles that match them
+    if (myTourneyFilters && !isAllAccess) {
+      const myMods = Array.isArray(myTourneyFilters.mods) ? myTourneyFilters.mods : [];
+      const mySkills = Array.isArray(myTourneyFilters.skillsets) ? myTourneyFilters.skillsets : [];
+      const myRanks = Array.isArray(myTourneyFilters.rank_ranges) ? myTourneyFilters.rank_ranges : [];
+      const overlap = function(a, b) {
+        if (!Array.isArray(a) || !Array.isArray(b) || !a.length || !b.length) return false;
+        return a.some(v => b.includes(v));
+      };
+
+      filtered = filtered.filter(u => {
+        const tp = u.tourney_prefs || { mods: [], skillsets: [], rank_ranges: [] };
+        if (myMods.length && !overlap(tp.mods || [], myMods)) return false;
+        if (mySkills.length && !overlap(tp.skillsets || [], mySkills)) return false;
+        if (myRanks.length && !overlap(tp.rank_ranges || [], myRanks)) return false;
+        return true;
+      });
+    }
+  } else {
+    // friend mode: apply the usual preference filters
+    if (prefs && !isAllAccess) {
+      filtered = baseList.filter(u => {
+        if (!u) return false;
+        if (!u.age || !u.gender) return false;
+        if (prefs.min_age !== null && typeof prefs.min_age === "number" && u.age < prefs.min_age) return false;
+        if (prefs.max_age !== null && typeof prefs.max_age === "number" && u.age > prefs.max_age) return false;
+        if (Array.isArray(prefs.genders) && prefs.genders.length > 0) {
+          if (!prefs.genders.includes(u.gender)) return false;
+        }
+        if (prefs.rank_max != null && typeof prefs.rank_max === "number") {
+          const gr = u.global_rank;
+          if (gr == null || gr > prefs.rank_max) return false;
+        }
+        return true;
+      });
+    }
+    filtered = orderBrowseForDisplay(baseList, filtered);
   }
 
-  filtered = orderBrowseForDisplay(baseList, filtered);
-
-  // normal users get 50. admins get everyone.
   const list = isAllAccess ? filtered : filtered.slice(0, 50);
-  res.render("pages/browse", { title: "browse", users: list });
+  res.render("pages/browse", { title: "browse", users: list, mode });
+});
+
+app.get("/feed", requireSignedInForFeed, async (req, res) => {
+  try {
+    const fdb = rtdb();
+    const posts = await buildFeedList(fdb, res.locals.me);
+    return res.render("pages/feed", { title: "scores feed", posts });
+  } catch (e) {
+    console.error(e);
+    req.session.flash = { type: "error", message: "could not load feed" };
+    return res.render("pages/feed", { title: "scores feed", posts: [] });
+  }
+});
+
+// dev helper: confirm the running server has latest tourney lists
+if (process.env.NODE_ENV !== "production") {
+  app.get("/debug/tourney-skillsets", (req, res) => {
+    res.type("json").send({
+      mods: TOURNEY_MODS,
+      skillsets: TOURNEY_SKILLSETS,
+      rank_ranges: TOURNEY_RANK_RANGES,
+    });
+  });
+}
+
+app.post("/feed/create", requireAuth, async (req, res) => {
+  const me = res.locals.me;
+  if (!me) return res.redirect("/feed");
+
+  const imageUrl = safeHttpUrl(req.body.image_url);
+  const replayUrl = safeHttpUrl(req.body.replay_url);
+  const caption = (req.body.caption || "").toString().trim().slice(0, FEED_CAPTION_MAX);
+
+  if (!imageUrl && !replayUrl) {
+    req.session.flash = { type: "error", message: "need at least an image url or a replay url" };
+    return res.redirect("/feed");
+  }
+  if (hasSlur(caption)) {
+    req.session.flash = { type: "error", message: "caption blocked" };
+    return res.redirect("/feed");
+  }
+
+  const fdb = rtdb();
+  const postRef = fdb.ref("feed_posts").push();
+  const now = Date.now();
+  await postRef.set({
+    author_id: String(me.id),
+    author_username: me.username || "unknown",
+    author_avatar_url: me.avatar_url || null,
+    image_url: imageUrl || null,
+    replay_url: replayUrl || null,
+    caption: caption || null,
+    created_at: now,
+  });
+  req.session.flash = { type: "ok", message: "posted" };
+  return res.redirect("/feed");
+});
+
+app.post("/feed/like", requireAuth, async (req, res) => {
+  const me = res.locals.me;
+  if (!me) return res.redirect("/feed");
+  const postId = (req.body.post_id || "").toString().trim();
+  if (!postId) return res.redirect("/feed");
+
+  const fdb = rtdb();
+  const postSnap = await fdb.ref(`feed_posts/${postId}`).get();
+  if (!postSnap.exists()) {
+    req.session.flash = { type: "error", message: "post not found" };
+    return res.redirect("/feed");
+  }
+
+  const uid = String(me.id);
+  const likeRef = fdb.ref(`feed_likes/${postId}/${uid}`);
+  const existing = await likeRef.get();
+  if (existing.exists()) {
+    await likeRef.remove();
+  } else {
+    await likeRef.set(true);
+  }
+  return res.redirect("/feed");
+});
+
+app.post("/feed/comment", requireAuth, async (req, res) => {
+  const me = res.locals.me;
+  if (!me) return res.redirect("/feed");
+  const postId = (req.body.post_id || "").toString().trim();
+  const bodyRaw = (req.body.body || "").toString().trim().slice(0, FEED_COMMENT_MAX);
+  if (!postId || !bodyRaw) {
+    req.session.flash = { type: "error", message: "empty comment" };
+    return res.redirect("/feed");
+  }
+  if (hasSlur(bodyRaw)) {
+    req.session.flash = { type: "error", message: "comment blocked" };
+    return res.redirect("/feed");
+  }
+
+  const fdb = rtdb();
+  const postSnap = await fdb.ref(`feed_posts/${postId}`).get();
+  if (!postSnap.exists()) {
+    req.session.flash = { type: "error", message: "post not found" };
+    return res.redirect("/feed");
+  }
+
+  const cref = fdb.ref(`feed_comments/${postId}`).push();
+  await cref.set({
+    user_id: String(me.id),
+    username: me.username || "unknown",
+    text: bodyRaw,
+    created_at: Date.now(),
+  });
+  return res.redirect("/feed");
+});
+
+app.post("/feed/delete", requireAuth, async (req, res) => {
+  const me = res.locals.me;
+  if (!me) return res.redirect("/feed");
+  const postId = (req.body.post_id || "").toString().trim();
+  if (!postId) return res.redirect("/feed");
+
+  const fdb = rtdb();
+  const postSnap = await fdb.ref(`feed_posts/${postId}`).get();
+  if (!postSnap.exists()) {
+    req.session.flash = { type: "error", message: "post not found" };
+    return res.redirect("/feed");
+  }
+  const p = postSnap.val();
+  const can =
+    String(p.author_id || "") === String(me.id) || isAdmin(res.locals.me);
+  if (!can) {
+    req.session.flash = { type: "error", message: "cant delete that" };
+    return res.redirect("/feed");
+  }
+
+  const updates = {};
+  updates[`feed_posts/${postId}`] = null;
+  updates[`feed_likes/${postId}`] = null;
+  updates[`feed_comments/${postId}`] = null;
+  await fdb.ref().update(updates);
+  req.session.flash = { type: "ok", message: "deleted" };
+  return res.redirect("/feed");
 });
 
 app.post("/account/destroy", requireAuth, async (req, res) => {
@@ -1669,7 +2498,7 @@ app.post("/message/send", requireAuth, requireProfile, async (req, res) => {
   const toUserId = (req.body.to_user_id || "").toString().trim();
   const bodyRaw = (req.body.body || "").toString().trim();
   const body = bodyRaw.slice(0, 500);
-  const redirectTo = (req.body.redirect_to || "").toString().trim();
+  const redirectTo = safeRedirectPath(req.body.redirect_to, "/browse");
 
   if (!toUserId) {
     req.session.flash = { type: "error", message: "invalid recipient" };
@@ -1893,6 +2722,9 @@ app.get("/inbox/:otherId", requireAuth, requireProfile, async (req, res) => {
 
   res.render("pages/inbox_thread", { title: "inbox", me, otherId, other, messages: thread, view });
 });
+
+// static assets after app routes — fixes "Cannot GET /feed" if a static file plugin or future public/feed file would steal the path
+app.use(express.static(path.join(__dirname, "public")));
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`server running on port ${PORT}`);

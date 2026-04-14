@@ -20,6 +20,19 @@
         <input type="hidden" name="redirect_to" value="/inbox" />
         <button class="btn tiny danger" type="submit">block</button>
       </form>
+      <!-- report toggle — uses details/summary so no js needed -->
+      <details class="inline" style="display: inline-block; position: relative">
+        <summary class="btn tiny ghost" style="list-style: none; cursor: pointer">report</summary>
+        <div style="position: absolute; right: 0; top: 2.2rem; z-index: 10; background: var(--card-bg, #fff); border: 1.5px solid rgba(212,196,255,0.5); border-radius: 0.7rem; padding: 0.85rem; min-width: 220px; box-shadow: 0 4px 18px rgba(0,0,0,0.08)">
+          <form action="/report" method="post">
+            <input type="hidden" name="to_user_id" value="<%= otherId %>" />
+            <input type="hidden" name="from_inbox" value="1" />
+            <label class="mini-label" style="display: block; margin-bottom: 0.35rem">reason</label>
+            <textarea name="body" rows="3" maxlength="500" placeholder="describe what happened..." required style="width: 100%; box-sizing: border-box; resize: vertical"></textarea>
+            <button class="btn tiny danger" type="submit" style="margin-top: 0.5rem; width: 100%">send report</button>
+          </form>
+        </div>
+      </details>
       <a class="btn tiny ghost" href="/inbox">back</a>
     </div>
   </div>
@@ -35,7 +48,7 @@
           const outgoing = m && m.direction === 'out';
         %>
         <div class="msg <%= outgoing ? 'read' : (m.read_at ? 'read' : 'unread') %>">
-          <img class="avatar smol" src="<%= outgoing ? (me.avatar_url || 'https://files.catbox.moe/evvmvg.webp') : (other.avatar_url || 'https://files.catbox.moe/evvmvg.webp') %>" alt="" />
+          <img class="avatar smol" src="<%= outgoing ? (me.avatar_url || 'https://a.ppy.sh/12742221?1773291467.png') : (other.avatar_url || 'https://a.ppy.sh/12742221?1773291467.png') %>" alt="" />
           <div>
             <div class="msg-top">
               <div class="msg-from">
@@ -52,18 +65,18 @@
 
   <div class="divider">✿</div>
 
-  <% if (me && me.age && me.bio && me.gender) { %>
+  <% if (me && me.age && me.bio && me.tourney_bio && me.gender) { %>
     <form class="messagebox" action="/message/send" method="post">
       <input type="hidden" name="to_user_id" value="<%= otherId %>" />
       <input type="hidden" name="redirect_to" value="/inbox/<%= otherId %>?view=<%= view %>" />
-      <label class="mini-label">reply</label>
-      <textarea name="body" rows="3" maxlength="500" placeholder="type a reply..." required></textarea>
+      <label class="mini-label" for="thread-reply-body">reply</label>
+      <textarea id="thread-reply-body" name="body" rows="3" maxlength="500" placeholder="type a reply..." required></textarea>
       <button class="btn" type="submit">send</button>
     </form>
   <% } else { %>
     <div class="notice">
       <div class="notice-title">u can browse, but u cant message yet</div>
-      <div class="notice-text">finish ur profile first (age + gender + description)</div>
+      <div class="notice-text">finish ur profile first (age + gender + both bios)</div>
     </div>
   <% } %>
 </section>

@@ -1,14 +1,13 @@
 {
   "name": "osudatingsite",
   "version": "1.0.0",
-  "description": "a fun and lighthearted dating site for osu! players",
+  "description": "circle! e-friend finder — find friends, share scores and replays",
   "main": "server.js",
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js"
   },
   "dependencies": {
-    "better-sqlite3": "^11.10.0",
     "connect-sqlite3": "^0.9.15",
     "dotenv": "^16.6.1",
     "ejs": "^3.1.10",

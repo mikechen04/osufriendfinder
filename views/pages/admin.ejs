@@ -1,0 +1,124 @@
+<%- include("../partials/head", { title }) %>
+
+<section class="card">
+  <p class="est">admin</p>
+  <h1 class="h1">staff stuff</h1>
+  <p class="muted" style="margin-top: 0.35rem">
+    <a class="softlink" href="/preferences">← back to preferences</a>
+  </p>
+
+  <div class="stack-section">
+    <div class="stack-item">
+      <h3>preview</h3>
+      <p>see the header + links like a normal signed-in user (not staff)</p>
+      <form action="/admin/preview-as-user" method="post" style="margin-top: 0.5rem">
+        <button class="btn tiny" type="submit">view as regular user</button>
+      </form>
+    </div>
+
+    <div class="stack-item">
+      <h3>site announcement</h3>
+      <p>shows at the top of every page for all visitors until the time runs out</p>
+      <% if (typeof siteAnnouncement !== "undefined" && siteAnnouncement && siteAnnouncement.text) { %>
+        <div class="notice" style="margin-top: 0.65rem">
+          <div class="notice-title">live now</div>
+          <div class="notice-text" style="white-space: pre-wrap"><%= siteAnnouncement.text %></div>
+          <div class="muted" style="margin-top: 0.35rem; font-size: 0.85rem">
+            until <%= new Date(siteAnnouncement.expires_at).toLocaleString() %>
+          </div>
+        </div>
+      <% } else { %>
+        <p class="muted" style="margin-top: 0.5rem">none active right now</p>
+      <% } %>
+      <form action="/admin/announcement" method="post" class="form" style="margin-top: 0.75rem">
+        <div class="form-row">
+          <label for="announcement_text">message</label>
+          <textarea
+            id="announcement_text"
+            name="announcement_text"
+            rows="3"
+            maxlength="2000"
+            placeholder="what ppl should see..."
+          ></textarea>
+        </div>
+        <div class="form-row">
+          <label for="duration_hours">how long (hours)</label>
+          <input
+            id="duration_hours"
+            name="duration_hours"
+            type="number"
+            min="0.25"
+            max="720"
+            step="0.25"
+            value="24"
+          />
+          <div class="hint">0.25 = 15 min · max 720 (30 days)</div>
+        </div>
+        <button class="btn tiny" type="submit">post / replace announcement</button>
+      </form>
+      <form action="/admin/announcement/clear" method="post" style="margin-top: 0.65rem" onsubmit="return confirm('clear announcement for everyone?')">
+        <button class="btn tiny ghost" type="submit">clear announcement</button>
+      </form>
+    </div>
+
+    <div class="stack-item">
+      <h3>bio cleanup</h3>
+      <p>wipe bios longer than 750 chars</p>
+      <form action="/admin/cleanup-bios" method="post" onsubmit="return confirm('run bio cleanup?')">
+        <button class="btn tiny danger" type="submit">run bio cleanup</button>
+      </form>
+    </div>
+
+    <div class="stack-item">
+      <h3>message search</h3>
+      <p>find dms that contain a word or phrase (admin only)</p>
+      <form action="/admin/messages" method="get" class="form" style="margin-top: 0.75rem">
+        <div class="form-row">
+          <label for="msg_search_q">keyword</label>
+          <input id="msg_search_q" name="q" type="text" maxlength="80" placeholder="e.g. discord, slur, etc" />
+        </div>
+        <button class="btn tiny" type="submit">search messages</button>
+      </form>
+    </div>
+
+    <div class="stack-item">
+      <h3>user list</h3>
+      <p>see everyone registered (filter by id or name)</p>
+      <a class="btn tiny" href="/admin/users" style="margin-top: 0.65rem; display: inline-block">open user list</a>
+    </div>
+
+    <div class="stack-item">
+      <h3>profile search</h3>
+      <p>view any profile by osu id or username</p>
+      <form action="/admin/view-profile" method="get" class="form" style="margin-top: 0.75rem">
+        <div class="form-row">
+          <label for="view_q">osu id or username</label>
+          <input id="view_q" name="q" type="text" maxlength="64" placeholder="id or username" required />
+        </div>
+        <button class="btn tiny" type="submit">view profile</button>
+      </form>
+    </div>
+
+    <div class="stack-item">
+      <h3>wipe user</h3>
+      <p>type osu id or username. this deletes them everywhere (be careful)</p>
+      <form action="/admin/wipe-user" method="post" class="form" style="margin-top: 0.75rem" onsubmit="return confirm('wipe this user completely?')">
+        <div class="form-row">
+          <label for="wipe_q">osu id or username</label>
+          <input id="wipe_q" name="q" type="text" maxlength="64" placeholder="id or username" required />
+        </div>
+        <button class="btn tiny danger" type="submit">wipe user</button>
+      </form>
+    </div>
+
+    <div class="stack-item">
+      <h3>banned users</h3>
+      <p>users banned from the site</p>
+      <div style="margin-top: 0.75rem">
+        <a class="btn tiny" href="/admin/banned">view banned</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<%- include("../partials/foot") %>

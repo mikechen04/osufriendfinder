@@ -1,0 +1,126 @@
+<%- include("../partials/head", { title }) %>
+
+<section class="card">
+  <p class="est">scores feed</p>
+  <h1 class="h1">share scores/replays</h1>
+  <p class="muted" style="margin-top: 0.35rem">
+    post a score screenshot (image url) and/or a replay link (issou.best, youtube, etc). likes + comments below each post.
+  </p>
+
+  <% if (me) { %>
+    <div class="divider">✿</div>
+    <form action="/feed/create" method="post" class="form feed-compose">
+      <div class="form-row">
+        <label for="feed_image_url">score screenshot (image url, optional)</label>
+        <input
+          id="feed_image_url"
+          name="image_url"
+          type="url"
+          maxlength="2000"
+          placeholder="https://… (png/jpg/webp)"
+        />
+      </div>
+      <div class="form-row">
+        <label for="feed_replay_url">replay / clip (url, optional)</label>
+        <input
+          id="feed_replay_url"
+          name="replay_url"
+          type="url"
+          maxlength="2000"
+          placeholder="https://link.issou.best/… or youtube…"
+        />
+        <div class="hint">paste issou.best links or any video page u want</div>
+      </div>
+      <div class="form-row">
+        <label for="feed_caption">caption</label>
+        <textarea id="feed_caption" name="caption" rows="2" maxlength="500" placeholder="map, mods, pp, whatever"></textarea>
+      </div>
+      <button class="btn tiny" type="submit">post</button>
+    </form>
+  <% } else { %>
+    <p class="notice" style="margin-top: 0.75rem">
+      <span class="notice-title">sign in to post</span>
+      <span class="notice-text">you can still scroll and read</span>
+    </p>
+    <a class="btn tiny" href="/auth/osu" style="margin-top: 0.5rem">sign in with osu!</a>
+  <% } %>
+</section>
+
+<% if (!posts || posts.length === 0) { %>
+  <section class="card compact">
+    <p class="muted">no posts yet — be the first</p>
+  </section>
+<% } %>
+
+<% (posts || []).forEach(post => { %>
+  <article class="card feed-card">
+    <div class="feed-card-head">
+      <img class="avatar smol" src="<%= post.author_avatar_url || 'https://a.ppy.sh/12742221?1773291467.png' %>" alt="" />
+      <div>
+        <div style="font-weight: 800"><%= post.author_username %></div>
+        <div class="muted" style="font-size: 0.82rem"><%= new Date(post.created_at || 0).toLocaleString() %></div>
+      </div>
+    </div>
+
+    <% if (post.caption) { %>
+      <p class="feed-caption" style="margin: 0.65rem 0 0"><%= post.caption %></p>
+    <% } %>
+
+    <% if (post.image_url) { %>
+      <div class="feed-media" style="margin-top: 0.65rem">
+        <a href="<%= post.image_url %>" target="_blank" rel="noreferrer">
+          <img class="feed-score-img" src="<%= post.image_url %>" alt="score screenshot" loading="lazy" />
+        </a>
+      </div>
+    <% } %>
+
+    <% if (post.replay_url) { %>
+      <div style="margin-top: 0.65rem">
+        <a class="btn tiny" href="<%= post.replay_url %>" target="_blank" rel="noreferrer">open replay / video</a>
+        <span class="muted" style="font-size: 0.8rem; margin-left: 0.35rem"><%= post.replay_url %></span>
+      </div>
+    <% } %>
+
+    <div class="feed-actions">
+      <% if (me) { %>
+        <form action="/feed/like" method="post" class="inline">
+          <input type="hidden" name="post_id" value="<%= post.id %>" />
+          <button class="btn tiny ghost" type="submit"><%= post.i_liked ? "♥ unlike" : "♡ like" %> (<%= post.like_count %>)</button>
+        </form>
+        <% if (me && String(post.author_id) === String(me.id)) { %>
+          <form action="/feed/delete" method="post" class="inline" onsubmit="return confirm('delete this post?')">
+            <input type="hidden" name="post_id" value="<%= post.id %>" />
+            <button class="btn tiny danger" type="submit">delete</button>
+          </form>
+        <% } %>
+      <% } else { %>
+        <span class="muted">♥ <%= post.like_count %> · sign in to like</span>
+      <% } %>
+    </div>
+
+    <% if (me) { %>
+      <form action="/feed/comment" method="post" class="form" style="margin-top: 0.75rem">
+        <input type="hidden" name="post_id" value="<%= post.id %>" />
+        <div class="form-row" style="margin-bottom: 0">
+          <label class="mini-label" for="c_<%= post.id %>">comment</label>
+          <input id="c_<%= post.id %>" name="body" type="text" maxlength="400" placeholder="say something nice" />
+        </div>
+        <button class="btn tiny" type="submit">comment</button>
+      </form>
+    <% } %>
+
+    <% if (post.comments && post.comments.length > 0) { %>
+      <ul class="feed-comment-list">
+        <% post.comments.forEach(c => { %>
+          <li class="feed-comment">
+            <span class="feed-comment-user"><%= c.username %></span>
+            <span class="feed-comment-text"><%= c.text %></span>
+            <span class="muted feed-comment-time"><%= new Date(c.created_at || 0).toLocaleString() %></span>
+          </li>
+        <% }) %>
+      </ul>
+    <% } %>
+  </article>
+<% }) %>
+
+<%- include("../partials/foot") %>

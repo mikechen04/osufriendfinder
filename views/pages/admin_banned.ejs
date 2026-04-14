@@ -1,0 +1,47 @@
+<%- include("../partials/head", { title }) %>
+
+<section class="card">
+  <p class="est">admin</p>
+  <h1 class="h1">banned users</h1>
+  <p class="muted" style="margin-top: 0.35rem">
+    <a class="softlink" href="/admin">← back to admin</a>
+  </p>
+
+  <% if (!bans || bans.length === 0) { %>
+    <p class="muted" style="margin-top: 1rem">no banned users</p>
+  <% } else { %>
+    <p class="muted" style="margin-top: 0.5rem; font-size: 0.85rem"><%= bans.length %> banned</p>
+    <div class="stack-section" style="margin-top: 0.75rem">
+      <% bans.forEach(function(b) { %>
+        <div class="stack-item" style="margin: 0">
+          <div style="display: flex; gap: 0.75rem; justify-content: space-between; flex-wrap: wrap; align-items: flex-start">
+            <div>
+              <div style="font-weight: 800">
+                <%= b.username || b.osu_id || b.id %>
+                <!-- osu profile link if we have an id -->
+                <% if (b.osu_id) { %>
+                  &nbsp;<a class="softlink" href="https://osu.ppy.sh/users/<%= b.osu_id %>" target="_blank" rel="noreferrer">osu</a>
+                  &nbsp;·&nbsp;<a class="softlink" href="/admin/view-profile?q=<%= encodeURIComponent(b.osu_id) %>">profile</a>
+                <% } %>
+              </div>
+              <div class="muted" style="margin-top: 0.15rem; font-size: 0.83rem">
+                <!-- show reason if it exists -->
+                <% if (b.reason) { %>reason: <%= b.reason %>&nbsp;&nbsp;<% } %>
+                <!-- show ban timestamp if we have it -->
+                <% if (b.at) { %><%= new Date(b.at).toLocaleString() %><% } %>
+              </div>
+            </div>
+
+            <!-- unban button -->
+            <form action="/admin/unban" method="post" class="inline">
+              <input type="hidden" name="osu_id" value="<%= b.osu_id || b.id %>" />
+              <button class="btn tiny ghost" type="submit">unban</button>
+            </form>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+  <% } %>
+</section>
+
+<%- include("../partials/foot") %>

@@ -2,19 +2,33 @@
 
 <%
   const safeJson = JSON.stringify(users || []).replace(/</g, "\\u003c");
+  const isTourney = mode === "tourney";
+  const canMsgHere =
+    me &&
+    me.age &&
+    me.bio &&
+    me.gender &&
+    (isTourney ? me.tourney_bio : true);
 %>
 
 <section class="card compact">
   <div class="browse-header">
     <div>
       <p class="est">browse</p>
-      <h2 class="panel-title" style="margin: 0">potential matches</h2>
-      <p class="muted" style="margin: 0.35rem 0 0">one at a time so u can overthink properly</p>
+      <h2 class="panel-title" style="margin: 0"><%= isTourney ? "tourney teammate finder" : "friend finder" %></h2>
+      <p class="muted" style="margin: 0.35rem 0 0"><%= isTourney ? "find teammates for your next tournament" : "one at a time so u can overthink properly" %></p>
     </div>
-    <div class="pager">
-      <button class="btn tiny ghost" type="button" data-browse-prev>prev</button>
-      <div class="pager-text"><span data-browse-idx>1</span>/<span data-browse-total><%= (users || []).length %></span></div>
-      <button class="btn tiny" type="button" data-browse-next>next</button>
+    <div style="display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-end">
+      <!-- mode toggle -->
+      <div class="browse-mode-toggle">
+        <a class="btn tiny <%= !isTourney ? '' : 'ghost' %>" href="/browse">friend finder</a>
+        <a class="btn tiny <%= isTourney ? '' : 'ghost' %>" href="/browse?mode=tourney">tourney</a>
+      </div>
+      <div class="pager">
+        <button class="btn tiny ghost" type="button" data-browse-prev>prev</button>
+        <div class="pager-text"><span data-browse-idx>1</span>/<span data-browse-total><%= (users || []).length %></span></div>
+        <button class="btn tiny" type="button" data-browse-next>next</button>
+      </div>
     </div>
   </div>
 </section>
@@ -23,12 +37,13 @@
   class="card"
   data-browse-root
   data-users-json="<%= safeJson %>"
+  data-browse-mode="<%= isTourney ? 'tourney' : 'friend' %>"
 >
   <div class="profile-block">
     <img
       class="avatar big"
       data-browse-avatar
-      src="https://files.catbox.moe/evvmvg.webp"
+      src="https://a.ppy.sh/12742221?1773291467.png"
       alt=""
     />
     <div>
@@ -38,12 +53,33 @@
     </div>
   </div>
 
-  <div class="bio big" data-browse-bio></div>
-
-  <div class="stack-item" style="margin-top: 0.75rem">
-    <div class="mini-label">their preferences</div>
-    <p class="muted" style="margin: 0.35rem 0 0" data-browse-their-prefs></p>
-  </div>
+  <% if (!isTourney) { %>
+    <!-- friend finder: bio + their prefs -->
+    <div class="bio big" data-browse-bio></div>
+    <div class="stack-item" style="margin-top: 0.75rem">
+      <div class="mini-label">preferences</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem" data-browse-their-prefs></div>
+    </div>
+  <% } else { %>
+    <!-- tourney mode: bio + tourney info -->
+    <div class="bio big" data-browse-bio></div>
+    <div class="stack-item" style="margin-top: 0.75rem">
+      <div class="mini-label">discord</div>
+      <p style="margin: 0.35rem 0 0" data-browse-tourney-discord class="muted"></p>
+    </div>
+    <div class="stack-item" style="margin-top: 0.75rem">
+      <div class="mini-label">mods</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem" data-browse-tourney-mods></div>
+    </div>
+    <div class="stack-item" style="margin-top: 0.5rem">
+      <div class="mini-label">skillsets</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem" data-browse-tourney-skillsets></div>
+    </div>
+    <div class="stack-item" style="margin-top: 0.5rem">
+      <div class="mini-label">rank range</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem" data-browse-tourney-ranks></div>
+    </div>
+  <% } %>
 
   <div class="divider">✿</div>
 
@@ -52,17 +88,18 @@
       <button class="btn tiny ghost" type="button" data-open-report>report</button>
       <form action="/block" method="post" class="inline">
         <input type="hidden" name="block_user_id" data-browse-block-user-id value="" />
-        <input type="hidden" name="redirect_to" value="/browse" />
+        <input type="hidden" name="redirect_to" value="/browse<%= isTourney ? '?mode=tourney' : '' %>">
         <button class="btn tiny danger" type="submit">block</button>
       </form>
     </div>
   <% } %>
 
-  <% if (me && me.age && me.bio && me.gender) { %>
+  <% if (canMsgHere) { %>
     <form class="messagebox" action="/message/send" method="post">
       <input type="hidden" name="to_user_id" data-browse-to-user-id value="" />
-      <label class="mini-label">send a message</label>
+      <label class="mini-label" for="browse-msg-body">send a message</label>
       <textarea
+        id="browse-msg-body"
         name="body"
         rows="3"
         maxlength="500"
@@ -74,7 +111,13 @@
   <% } else { %>
     <div class="notice">
       <div class="notice-title">u can browse, but u cant message yet</div>
-      <div class="notice-text">finish ur profile first (age + gender + description)</div>
+      <div class="notice-text">
+        <% if (isTourney) { %>
+          finish ur profile + tourney teammate description in edit profile
+        <% } else { %>
+          finish ur profile first (age + gender + friend finder description)
+        <% } %>
+      </div>
     </div>
   <% } %>
 </section>

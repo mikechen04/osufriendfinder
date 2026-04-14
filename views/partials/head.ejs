@@ -3,16 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title><%= title %> · osu! dating</title>
-    <meta name="description" content="find ur osu gf or bf... or pet... goose luck" />
+    <title><%= title %> · circle! e-friend finder</title>
+    <meta name="description" content="find ur osu friends and look at cool scores" />
 
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="osu! dating" />
-    <meta property="og:description" content="find ur osu gf or bf... or pet... goose luck" />
+    <meta property="og:title" content="circle! e-friend finder" />
+    <meta property="og:description" content="find ur osu friends and look at cool scores" />
 
     <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="osu! dating" />
-    <meta name="twitter:description" content="find ur osu gf or bf... or pet... goose luck" />
+    <meta name="twitter:title" content="circle! e-friend finder" />
+    <meta name="twitter:description" content="find ur osu friends and look at cool scores" />
+    <link rel="icon" href="https://a.ppy.sh/12742221?1773291467.png" type="image/png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -24,7 +25,12 @@
   </head>
   <body>
     <% if (typeof siteAnnouncement !== "undefined" && siteAnnouncement && siteAnnouncement.text) { %>
-      <div class="site-announcement" role="status">
+      <div
+        class="site-announcement"
+        role="status"
+        data-announcement-expires="<%= Number(siteAnnouncement.expires_at) %>"
+      >
+        <button type="button" class="site-announcement-close" aria-label="close announcement">×</button>
         <div class="site-announcement-inner">
           <span class="site-announcement-label">announcement</span>
           <p class="site-announcement-text"><%= siteAnnouncement.text %></p>
@@ -32,17 +38,27 @@
         </div>
       </div>
     <% } %>
-    <% if (typeof siteReadOnly !== "undefined" && siteReadOnly && !isAdmin) { %>
+    <% if (typeof siteReadOnly !== "undefined" && siteReadOnly && !locals.isAdmin) { %>
       <div class="site-readonly-banner" role="status">
         <div class="site-readonly-inner">
-          read-only mode — you can browse and sign in, but sending messages and saving changes are off
+          read-only mode - browsing is enabled but you can not send messages
+        </div>
+      </div>
+    <% } %>
+    <% if (typeof viewAsRegularUser !== "undefined" && viewAsRegularUser) { %>
+      <div class="site-preview-banner" role="region" aria-label="preview mode">
+        <div class="site-preview-inner">
+          <span>viewing as a default user</span>
+          <form action="/admin/preview-as-user/end" method="post" class="inline">
+            <button class="btn btn-primary btn-tiny" type="submit">back to admin</button>
+          </form>
         </div>
       </div>
     <% } %>
     <div class="bg-stars" aria-hidden="true"></div>
 
     <div class="modal-backdrop" data-age-backdrop hidden>
-      <div class="modal age-modal" role="dialog" aria-modal="true" aria-labelledby="age-title">
+      <div class="modal age-modal" role="dialog" aria-modal="true" aria-labelledby="age-title" tabindex="-1">
         <div class="age-top">
           <div id="age-title" class="age-title">18+ only</div>
           <div class="age-kicker">pls be normal</div>
@@ -52,30 +68,62 @@
           this is an 18+ website. if you are under 18, please exit now
         </div>
 
-        <div class="age-actions">
-          <button class="btn tiny" type="button" data-age-agree>agree</button>
+        <div class="age-checks">
+          <label class="age-terms-check">
+            <input type="checkbox" class="age-legal-cb" disabled autocomplete="off" />
+            <span class="age-check-prefix">i have read and agree to the </span><a class="age-check-link" href="/terms" target="_blank" rel="noreferrer">terms of service</a>
+          </label>
+          <label class="age-terms-check">
+            <input type="checkbox" class="age-legal-cb" disabled autocomplete="off" />
+            <span class="age-check-prefix">i have read and agree to the </span><a class="age-check-link" href="/privacy" target="_blank" rel="noreferrer">privacy policy</a>
+          </label>
+          <label class="age-terms-check">
+            <input type="checkbox" class="age-legal-cb" disabled autocomplete="off" />
+            <span class="age-check-prefix">i have read and agree to the </span><a class="age-check-link" href="/disclaimer" target="_blank" rel="noreferrer">disclaimer</a>
+          </label>
+          <p class="age-checks-hint">(click on the links first)</p>
+          <label class="age-terms-check age-terms-check--free">
+            <input type="checkbox" id="age-18-cb" autocomplete="off" />
+            <span class="age-check-prefix">i confirm i am at least 18 years old</span>
+          </label>
+        </div>
+
+        <div class="age-actions" style="margin-top: 0.85rem">
+          <button class="btn tiny" type="button" data-age-agree disabled>agree</button>
         </div>
       </div>
     </div>
 
     <header class="rr-header">
-      <a class="rr-brand" href="/">osu! edating</a>
+      <a class="rr-brand" href="/">circle! e-friend finder</a>
 
       <div class="rr-header-actions">
         <% if (me) { %>
+          <% if (locals.isAdmin) { %>
+            <a class="linklike" href="/admin">admin</a>
+            <span class="nav-dot" aria-hidden="true">·</span>
+            <a class="linklike" href="/admin/reports">reports</a>
+            <span class="nav-dot" aria-hidden="true">·</span>
+          <% } %>
           <a class="linklike" href="/preferences">preferences</a>
+          <span class="nav-dot" aria-hidden="true">·</span>
           <a class="linklike" href="/browse">browse</a>
+          <span class="nav-dot" aria-hidden="true">·</span>
           <a class="linklike" href="/inbox">
             inbox
             <% if (typeof inboxUnread === "number") { %>
               <span class="inbox-badge"><%= inboxUnread %></span>
             <% } %>
           </a>
+          <span class="nav-dot" aria-hidden="true">·</span>
           <a class="linklike" href="/profile">profile</a>
+          <span class="nav-dot" aria-hidden="true">·</span>
           <form action="/logout" method="post" class="inline">
             <button class="linklike" type="submit">logout</button>
           </form>
         <% } else { %>
+          <a class="linklike" href="/browse">browse</a>
+          <span class="nav-dot" aria-hidden="true">·</span>
           <a class="btn btn-primary btn-tiny" href="/auth/osu">sign in with osu!</a>
         <% } %>
       </div>

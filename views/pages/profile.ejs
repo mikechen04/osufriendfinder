@@ -4,7 +4,7 @@
   <p class="est">profile</p>
   <h1 class="h1">meow arf awruff</h1>
 
-  <form action="/profile" method="post" class="form">
+  <form id="profile-edit-form" action="/profile" method="post" class="form">
     <div class="form-row">
       <label for="display_name">display name (optional)</label>
       <input
@@ -45,16 +45,16 @@
     </div>
 
     <div class="form-row">
-      <label for="bio">description</label>
+      <label for="bio">friend finder description</label>
       <textarea
         id="bio"
         name="bio"
         maxlength="750"
         rows="6"
-        placeholder="ex: looking for a duo who won't abandon me after 1 bad map..."
+        placeholder="ex: looking for friends, casual hangout chat..."
         required
       ><%= me && me.bio ? me.bio : "" %></textarea>
-      <div class="hint">shown to others when people browse</div>
+      <div class="hint">shown in friend finder browse</div>
     </div>
 
     <div class="form-row">
@@ -67,23 +67,52 @@
         placeholder="discord"
         value="<%= me && me.discord ? me.discord : '' %>"
       />
-      <div class="hint">shown on your profile only (for now)</div>
+      <div class="hint">shown on ur profile + in tourney browse when u list it</div>
     </div>
 
-    <div class="profile-save-wrap">
-      <button class="btn profile-save-btn" type="submit">save profile</button>
-    </div>
   </form>
 
   <div class="divider">✿</div>
 
-  <form
-    action="/account/destroy"
-    method="post"
-    onsubmit="return confirm('are u sure? this deletes ur profile + messages and logs u out')"
-  >
-    <button class="btn danger" type="submit">destroy ur profile</button>
-  </form>
+  <div class="stack-section">
+    <div class="stack-item">
+      <div class="form-row" style="margin-top: 0">
+        <label for="tourney_bio">tourney teammate description</label>
+        <textarea
+          id="tourney_bio"
+          name="tourney_bio"
+          maxlength="750"
+          rows="6"
+          placeholder="ex: lf 4* nm teammate for tourneys, free weekends..."
+          required
+        ><%= me && me.tourney_bio ? me.tourney_bio : "" %></textarea>
+        <div class="hint">shown in tourney teammate browse (can be different from friend finder)</div>
+      </div>
+    </div>
+
+    <%- include("../partials/tourney_prefs_block", {
+      tourneyKind: "profile",
+      tourneyRedirect: "/profile/tourney",
+      tourneyPrefs: locals.tSavedProfile,
+      tourneyModsList: locals.tourneyModsList,
+      tourneySkillsetsList: locals.tourneySkillsetsList,
+      tourneyRankRangesList: locals.tourneyRankRangesList,
+    }) %>
+  </div>
+
+  <div class="divider">✿</div>
+
+  <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center">
+    <button class="btn profile-save-btn" type="submit" form="profile-edit-form">save profile</button>
+    <form
+      action="/account/destroy"
+      method="post"
+      onsubmit="return confirm('are u sure? this deletes ur profile + messages and logs u out')"
+      class="inline"
+    >
+      <button class="btn danger" type="submit">destroy ur profile</button>
+    </form>
+  </div>
 </section>
 
 <%- include("../partials/foot") %>

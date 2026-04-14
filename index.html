@@ -3,16 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>osu! dating</title>
-    <meta name="description" content="find ur osu gf or bf... or pet... goose luck" />
+    <title>circle! e-friend finder</title>
+    <meta name="description" content="find ur osu friends and look at cool scores" />
 
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="osu! dating" />
-    <meta property="og:description" content="find ur osu gf or bf... or pet... goose luck" />
+    <meta property="og:title" content="circle! e-friend finder" />
+    <meta property="og:description" content="find ur osu friends and look at cool scores" />
 
     <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="osu! dating" />
-    <meta name="twitter:description" content="find ur osu gf or bf... or pet... goose luck" />
+    <meta name="twitter:title" content="circle! e-friend finder" />
+    <meta name="twitter:description" content="find ur osu friends and look at cool scores" />
+    <link rel="icon" href="https://a.ppy.sh/12742221?1773291467.png" type="image/png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -25,10 +26,11 @@
   <body>
     <!--ANNOUNCEMENT-->
     <!--READONLY-->
+    <!--PREVIEW-->
     <div class="bg-stars" aria-hidden="true"></div>
 
     <div class="modal-backdrop" data-age-backdrop hidden>
-      <div class="modal age-modal" role="dialog" aria-modal="true" aria-labelledby="age-title">
+      <div class="modal age-modal" role="dialog" aria-modal="true" aria-labelledby="age-title" tabindex="-1">
         <div class="age-top">
           <div id="age-title" class="age-title">18+ only</div>
           <div class="age-kicker">pls be normal</div>
@@ -38,17 +40,39 @@
           this is an 18+ website. if you are under 18, please exit now
         </div>
 
-        <div class="age-actions">
-          <button class="btn tiny" type="button" data-age-agree>agree</button>
+        <div class="age-checks">
+          <label class="age-terms-check">
+            <input type="checkbox" class="age-legal-cb" disabled autocomplete="off" />
+            <span class="age-check-prefix">i have read and agree to the </span><a class="age-check-link" href="/terms" target="_blank" rel="noreferrer">terms of service</a>
+          </label>
+          <label class="age-terms-check">
+            <input type="checkbox" class="age-legal-cb" disabled autocomplete="off" />
+            <span class="age-check-prefix">i have read and agree to the </span><a class="age-check-link" href="/privacy" target="_blank" rel="noreferrer">privacy policy</a>
+          </label>
+          <label class="age-terms-check">
+            <input type="checkbox" class="age-legal-cb" disabled autocomplete="off" />
+            <span class="age-check-prefix">i have read and agree to the </span><a class="age-check-link" href="/disclaimer" target="_blank" rel="noreferrer">disclaimer</a>
+          </label>
+          <p class="age-checks-hint">(click on the links first)</p>
+          <label class="age-terms-check age-terms-check--free">
+            <input type="checkbox" id="age-18-cb" autocomplete="off" />
+            <span class="age-check-prefix">i confirm i am at least 18 years old</span>
+          </label>
+        </div>
+
+        <div class="age-actions" style="margin-top: 0.85rem">
+          <button class="btn tiny" type="button" data-age-agree disabled>agree</button>
         </div>
       </div>
     </div>
 
     <header class="rr-header">
-      <a class="rr-brand" href="https://osudatingmeow-git-57346811168.us-east1.run.app/">osu! edating</a>
+      <a class="rr-brand" href="/">circle! e-friend finder</a>
 
       <div class="rr-header-actions">
-        <a class="btn btn-primary btn-tiny" href="https://osudatingmeow-git-57346811168.us-east1.run.app/auth/osu">sign in with osu!</a>
+        <a class="linklike" href="/browse">browse</a>
+        <span class="nav-dot" aria-hidden="true">·</span>
+        <a class="btn btn-primary btn-tiny" href="/auth/osu">sign in with osu!</a>
       </div>
     </header>
 
@@ -57,17 +81,15 @@
 
       <section class="rr-hero" aria-labelledby="hero-title">
         <h1 id="hero-title" class="rr-hero-title">
-          <span class="line1">find your</span>
-          <span class="line2">osu soulmate</span>
+          <span class="line1">find osu</span>
+          <span class="line2">friends</span>
         </h1>
 
-        <p class="rr-hero-sub">
-          a totally serious edating site for osu losers.... who want to find their osu soulmate..... arf meow meow brrr awruff
-        </p>
+        <p class="rr-hero-sub">find ur osu friends and look at cool scores</p>
 
         <div class="rr-hero-cta">
-          <a class="btn btn-primary" href="https://osudatingmeow-git-57346811168.us-east1.run.app/auth/osu">setup your profile</a>
-          <a class="btn btn-outline" href="https://osudatingmeow-git-57346811168.us-east1.run.app/browse">browse</a>
+          <a class="btn btn-primary" href="/auth/osu">sign in with osu!</a>
+          <a class="btn btn-outline" href="/browse">browse</a>
         </div>
 
         <p class="rr-hero-note">
@@ -77,7 +99,7 @@
 
       <section class="card" data-home-showcase hidden>
         <p class="est">showcase</p>
-        <h2 class="panel-title" style="margin: 0">random users</h2>
+        <h2 class="panel-title" style="margin: 0">random players</h2>
         <p class="muted" style="margin: 0.35rem 0 0.85rem">refresh = different ppl</p>
 
         <div class="showcase-grid" data-home-showcase-grid></div>
@@ -86,13 +108,13 @@
       <section id="features" class="rr-features">
         <div class="rr-features-inner">
           <p class="rr-kicker">how it works</p>
-          <h2 class="rr-section-title">built different</h2>
+          <h2 class="rr-section-title">cool stuff</h2>
 
           <div class="rr-feature-grid">
             <article class="rr-feature-card">
               <div class="rr-feature-icon">6</div>
-              <h3>find your perfect duo</h3>
-              <p>filter by something something. browse one profile at a time</p>
+              <h3>browse</h3>
+              <p>sign in or use a secret code to browse as a guest</p>
             </article>
             <article class="rr-feature-card">
               <div class="rr-feature-icon">7</div>
@@ -115,27 +137,33 @@
             <a href="https://osu.ppy.sh/users/12742221" target="_blank" rel="noreferrer">
               <img
                 class="rr-meow-img"
-                src="https://files.catbox.moe/evvmvg.webp"
+                src="https://a.ppy.sh/12742221?1773291467.png"
                 alt=""
                 width="96"
                 height="96"
               />
             </a>
-            <p class="rr-meow-bubble">meow meow meow mlep mrrp</p>
+            <p class="rr-meow-bubble" aria-live="polite">meow meow meow mlep mrrp</p>
           </div>
         </div>
       </section>
     </main>
 
     <footer class="site-footer">
-      <p>✿ not affiliated with osu! - 18+ only please ✿</p>
-      <p class="footer-credit">this is a joke site pls dont take it seriously...</p>
+      <p>✿ not affiliated with osu! 18+ only ✿</p>
+      <p>for entertainment only</p>
       <p class="footer-madeby">
         made by <a href="https://osu.ppy.sh/users/9632648" target="_blank" rel="noreferrer">aheriez</a> ·
         <a href="https://twitter.com/aherieznya" target="_blank" rel="noreferrer">@aherieznya</a>
       </p>
+      <p class="footer-legal">
+        <a href="/terms">terms</a> ·
+        <a href="/privacy">privacy</a> ·
+        <a href="/disclaimer">disclaimer</a>
+      </p>
     </footer>
 
-    <!-- this landing page is static (github pages/custom domain), so server-only links must point at cloud run -->
+    <!-- showcase data injected server-side so it always works -->
+    <!--SHOWCASE_DATA-->
   </body>
 </html>

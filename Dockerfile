@@ -1,4 +1,3 @@
-# node slim + build tools — better-sqlite3 needs native compile (common cloud build failure without this)
 FROM node:20-bookworm-slim
 
 RUN apt-get update \
@@ -13,9 +12,6 @@ RUN npm ci --omit=dev
 COPY . .
 
 # index.html lives at repo root next to this Dockerfile (home page for GET /)
-
-# db.js is gitignored locally; cloud build only has db.example.js
-RUN cp -f db.example.js db.js
 
 ENV NODE_ENV=production
 EXPOSE 8080

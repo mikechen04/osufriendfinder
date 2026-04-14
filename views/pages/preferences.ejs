@@ -6,88 +6,84 @@
 
   <div class="stack-section">
     <div class="stack-item">
-      <h3>dating preferences</h3>
+      <h3>browse filters</h3>
       <p>this just filters who shows up on browse</p>
 
       <form action="/preferences" method="post" class="form" style="margin-top: 0.75rem">
         <%
-          // use res.locals.prefs (express makes it available as `prefs` here)
           const p = (typeof prefs !== "undefined" ? prefs : null);
-          const minAge = p && typeof p.min_age === "number" ? p.min_age : "";
-          const maxAge = p && typeof p.max_age === "number" ? p.max_age : "";
+          const minAge = p && typeof p.min_age === "number" ? p.min_age : null;
+          const maxAge = p && typeof p.max_age === "number" ? p.max_age : null;
           const genders = p && Array.isArray(p.genders) ? p.genders : [];
           const rankMax = p && typeof p.rank_max === "number" ? p.rank_max : null;
+
+          // starting values for the sliders
+          const sliderMin = minAge != null ? minAge : 18;
+          const sliderMax = maxAge != null ? maxAge : 67;
+
+          const rankOptions = [
+            { label: "any", val: "any" },
+            { label: "#1+", val: "1" },
+            { label: "#100+", val: "100" },
+            { label: "#500+", val: "500" },
+            { label: "#1000+", val: "1000" },
+            { label: "#5000+", val: "5000" },
+            { label: "#10000+", val: "10000" },
+            { label: "#50000+", val: "50000" },
+          ];
         %>
 
-        <div class="form-row">
-          <label for="pref_min_age">preferred min age</label>
-          <input
-            id="pref_min_age"
-            name="pref_min_age"
-            type="number"
-            min="18"
-            max="120"
-            placeholder="leave blank"
-            value="<%= minAge %>"
-          />
-          <div class="hint">blank = no min age filter</div>
-        </div>
+        <!-- hidden age inputs updated by the dual range slider js -->
+        <input type="hidden" name="pref_min_age" id="hidden-min-age" value="<%= minAge != null ? minAge : '' %>" />
+        <input type="hidden" name="pref_max_age" id="hidden-max-age" value="<%= maxAge != null ? maxAge : '' %>" />
 
         <div class="form-row">
-          <label for="pref_max_age">preferred max age</label>
-          <input
-            id="pref_max_age"
-            name="pref_max_age"
-            type="number"
-            min="18"
-            max="120"
-            placeholder="leave blank"
-            value="<%= maxAge %>"
-          />
-          <div class="hint">blank = no max age filter</div>
+          <label>preferred age range &nbsp;<span class="age-range-display">(<span id="age-min-label"><%= sliderMin %></span>–<span id="age-max-label"><%= sliderMax %></span>)</span></label>
+          <div class="dual-range" style="max-width: 50%">
+            <div class="dual-range-track">
+              <div class="dual-range-fill" id="age-fill"></div>
+            </div>
+            <input type="range" class="dual-range-input" id="age-min-slider" min="18" max="67" value="<%= sliderMin %>" />
+            <input type="range" class="dual-range-input" id="age-max-slider" min="18" max="67" value="<%= sliderMax %>" />
+          </div>
         </div>
 
         <div class="form-row">
           <label>preferred genders</label>
-          <div class="check-row">
-            <label class="check">
-              <input type="checkbox" name="pref_genders" value="male" <%= genders.includes("male") ? "checked" : "" %> />
-              <span>male</span>
-            </label>
-            <label class="check">
-              <input type="checkbox" name="pref_genders" value="female" <%= genders.includes("female") ? "checked" : "" %> />
-              <span>female</span>
-            </label>
-            <label class="check">
-              <input type="checkbox" name="pref_genders" value="enby" <%= genders.includes("enby") ? "checked" : "" %> />
-              <span>enby</span>
-            </label>
-            <label class="check">
-              <input type="checkbox" name="pref_genders" value="other" <%= genders.includes("other") ? "checked" : "" %> />
-              <span>other</span>
-            </label>
+          <div class="pref-pill-row">
+            <% ['male', 'female', 'enby', 'other'].forEach(function(g) { %>
+              <label class="pref-pill <%= genders.includes(g) ? 'active' : '' %>">
+                <input type="checkbox" name="pref_genders" value="<%= g %>" <%= genders.includes(g) ? 'checked' : '' %> />
+                <%= g %>
+              </label>
+            <% }); %>
           </div>
-          <div class="hint">if u dont check anything, it wont filter gender</div>
         </div>
 
         <div class="form-row">
-          <label for="pref_rank">preferred partner rank (osu global)</label>
-          <select id="pref_rank" name="pref_rank">
-            <option value="any" <%= rankMax == null ? "selected" : "" %>>any rank</option>
-            <option value="1" <%= rankMax === 1 ? "selected" : "" %>>#1+</option>
-            <option value="100" <%= rankMax === 100 ? "selected" : "" %>>#100+</option>
-            <option value="500" <%= rankMax === 500 ? "selected" : "" %>>#500+</option>
-            <option value="1000" <%= rankMax === 1000 ? "selected" : "" %>>#1000+</option>
-            <option value="5000" <%= rankMax === 5000 ? "selected" : "" %>>#5000+</option>
-            <option value="10000" <%= rankMax === 10000 ? "selected" : "" %>>#10000+</option>
-            <option value="50000" <%= rankMax === 50000 ? "selected" : "" %>>#50000+</option>
-          </select>
-          <div class="hint">they need to be at least this good (lower # = better)</div>
+          <label>preferred rank (osu global)</label>
+          <div class="pref-pill-row">
+            <% rankOptions.forEach(function(opt) { %>
+              <label class="pref-pill <%= (rankMax == null && opt.val === 'any') || String(rankMax) === opt.val ? 'active' : '' %>">
+                <input type="radio" name="pref_rank" value="<%= opt.val %>" <%= (rankMax == null && opt.val === 'any') || String(rankMax) === opt.val ? 'checked' : '' %> />
+                <%= opt.label %>
+              </label>
+            <% }); %>
+          </div>
         </div>
 
-        <button class="btn tiny" type="submit">save preferences</button>
+        <button class="btn tiny" type="submit" style="width: fit-content">save preferences</button>
       </form>
     </div>
+
+    <%- include("../partials/tourney_prefs_block", {
+      tourneyKind: "filter",
+      tourneyRedirect: "/preferences",
+      tourneyPrefs: locals.tSavedFilter,
+      tourneyModsList: locals.tourneyModsList,
+      tourneySkillsetsList: locals.tourneySkillsetsList,
+      tourneyRankRangesList: locals.tourneyRankRangesList,
+    }) %>
 
     <div class="stack-item">
       <h3>profile</h3>
@@ -110,7 +106,7 @@
             <div class="stack-item" style="margin: 0">
               <div style="display: flex; gap: 0.75rem; align-items: center; justify-content: space-between; flex-wrap: wrap">
                 <div style="display: flex; gap: 0.65rem; align-items: center">
-                  <img class="avatar smol" src="<%= u.avatar_url || 'https://files.catbox.moe/evvmvg.webp' %>" alt="" />
+                  <img class="avatar smol" src="<%= u.avatar_url || 'https://a.ppy.sh/12742221?1773291467.png' %>" alt="" />
                   <div>
                     <div style="font-weight: 800"><%= u.username %></div>
                     <a class="softlink" href="https://osu.ppy.sh/users/<%= u.osu_id %>" target="_blank" rel="noreferrer">osu!</a>
@@ -140,144 +136,7 @@
       </form>
     </div>
 
-    <% if (isAdmin) { %>
-      <div class="stack-item">
-        <h3>site announcement</h3>
-        <p>shows at the top of every page for all visitors until the time runs out</p>
-        <% if (typeof siteAnnouncement !== "undefined" && siteAnnouncement && siteAnnouncement.text) { %>
-          <div class="notice" style="margin-top: 0.65rem">
-            <div class="notice-title">live now</div>
-            <div class="notice-text" style="white-space: pre-wrap"><%= siteAnnouncement.text %></div>
-            <div class="muted" style="margin-top: 0.35rem; font-size: 0.85rem">
-              until <%= new Date(siteAnnouncement.expires_at).toLocaleString() %>
-            </div>
-          </div>
-        <% } else { %>
-          <p class="muted" style="margin-top: 0.5rem">none active right now</p>
-        <% } %>
-        <form action="/admin/announcement" method="post" class="form" style="margin-top: 0.75rem">
-          <div class="form-row">
-            <label for="announcement_text">message</label>
-            <textarea
-              id="announcement_text"
-              name="announcement_text"
-              rows="3"
-              maxlength="2000"
-              placeholder="what ppl should see..."
-            ></textarea>
-          </div>
-          <div class="form-row">
-            <label for="duration_hours">how long (hours)</label>
-            <input
-              id="duration_hours"
-              name="duration_hours"
-              type="number"
-              min="0.25"
-              max="720"
-              step="0.25"
-              value="24"
-            />
-            <div class="hint">0.25 = 15 min · max 720 (30 days)</div>
-          </div>
-          <button class="btn tiny" type="submit">post / replace announcement</button>
-        </form>
-        <form action="/admin/announcement/clear" method="post" style="margin-top: 0.65rem" onsubmit="return confirm('clear announcement for everyone?')">
-          <button class="btn tiny ghost" type="submit">clear announcement</button>
-        </form>
-      </div>
-
-      <div class="stack-item">
-        <h3>admin</h3>
-        <p>wipe bios longer than 750 chars</p>
-        <form action="/admin/cleanup-bios" method="post" onsubmit="return confirm('run bio cleanup?')">
-          <button class="btn tiny danger" type="submit">run bio cleanup</button>
-        </form>
-      </div>
-
-      <div class="stack-item">
-        <h3>message search</h3>
-        <p>find dms that contain a word or phrase (admin only)</p>
-        <form action="/admin/messages" method="get" class="form" style="margin-top: 0.75rem">
-          <div class="form-row">
-            <label for="msg_search_q">keyword</label>
-            <input id="msg_search_q" name="q" type="text" maxlength="80" placeholder="e.g. discord, slur, etc" />
-          </div>
-          <button class="btn tiny" type="submit">search messages</button>
-        </form>
-      </div>
-
-      <div class="stack-item">
-        <h3>user list</h3>
-        <p>see everyone registered (filter by id or name)</p>
-        <a class="btn tiny" href="/admin/users" style="margin-top: 0.65rem; display: inline-block">open user list</a>
-      </div>
-
-      <div class="stack-item">
-        <h3>profile search</h3>
-        <p>view any profile by osu id or username</p>
-        <form action="/admin/view-profile" method="get" class="form" style="margin-top: 0.75rem">
-          <div class="form-row">
-            <label for="view_q">osu id or username</label>
-            <input id="view_q" name="q" type="text" maxlength="64" placeholder="id or username" required />
-          </div>
-          <button class="btn tiny" type="submit">view profile</button>
-        </form>
-      </div>
-
-      <div class="stack-item">
-        <h3>wipe user</h3>
-        <p>type osu id or username. this deletes them everywhere (be careful)</p>
-        <form action="/admin/wipe-user" method="post" class="form" style="margin-top: 0.75rem" onsubmit="return confirm('wipe this user completely?')">
-          <div class="form-row">
-            <label for="wipe_q">osu id or username</label>
-            <input id="wipe_q" name="q" type="text" maxlength="64" placeholder="id or username" required />
-          </div>
-          <button class="btn tiny danger" type="submit">wipe user</button>
-        </form>
-      </div>
-
-      <div class="stack-item">
-        <h3>reports</h3>
-        <p>stuff ppl report (from the browse page)</p>
-
-        <% if (!reports || reports.length === 0) { %>
-          <p class="muted" style="margin-top: 0.65rem">none</p>
-        <% } else { %>
-          <div class="stack-section" style="margin-top: 0.75rem">
-            <% reports.forEach(r => { %>
-              <div class="stack-item" style="margin: 0">
-                <div style="display: flex; gap: 0.75rem; justify-content: space-between; flex-wrap: wrap">
-                  <div style="min-width: 220px">
-                    <div style="font-weight: 800">
-                      from <%= r.from_username || 'unknown' %>
-                      <% if (r.from_osu_id) { %>
-                        (<a class="softlink" href="https://osu.ppy.sh/users/<%= r.from_osu_id %>" target="_blank" rel="noreferrer">osu</a>)
-                      <% } %>
-                    </div>
-                    <div class="muted" style="margin-top: 0.1rem">
-                      about <%= r.to_username || r.to_user_id || 'unknown' %>
-                      <% if (r.to_osu_id) { %>
-                        (<a class="softlink" href="https://osu.ppy.sh/users/<%= r.to_osu_id %>" target="_blank" rel="noreferrer">osu</a>)
-                      <% } %>
-                    </div>
-                    <div class="muted" style="margin-top: 0.25rem"><%= new Date(r.created_at || Date.now()).toLocaleString() %></div>
-                  </div>
-
-                  <form action="/admin/reports/done" method="post" class="inline">
-                    <input type="hidden" name="report_id" value="<%= r.id %>" />
-                    <button class="btn tiny ghost" type="submit">mark done</button>
-                  </form>
-                </div>
-
-                <div class="msg-body" style="margin-top: 0.65rem"><%= r.body %></div>
-              </div>
-            <% }) %>
-          </div>
-        <% } %>
-      </div>
-    <% } %>
   </div>
 </section>
 
 <%- include("../partials/foot") %>
-

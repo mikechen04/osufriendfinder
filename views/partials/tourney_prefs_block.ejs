@@ -1,0 +1,29 @@
+<%
+  const _tourneyRedirect = typeof tourneyRedirect !== "undefined" ? tourneyRedirect : "/preferences";
+  const _tp = typeof tourneyPrefs !== "undefined" ? tourneyPrefs : null;
+  const _kind = typeof tourneyKind !== "undefined" && tourneyKind === "filter" ? "filter" : "profile";
+  const _title = _kind === "filter"
+    ? "tourney browse filters"
+    : "tourney teammate profile customization";
+  const _desc = _kind === "filter"
+    ? "pick what kind of tourney players u want to see while browsing"
+    : "";
+  // lists come from parent include (preferences/profile pass locals.tourney*List)
+  const _modList = (typeof tourneyModsList !== "undefined" && Array.isArray(tourneyModsList)) ? tourneyModsList : [];
+  const _skillList = (typeof tourneySkillsetsList !== "undefined" && Array.isArray(tourneySkillsetsList)) ? tourneySkillsetsList : [];
+  const _rankList = (typeof tourneyRankRangesList !== "undefined" && Array.isArray(tourneyRankRangesList)) ? tourneyRankRangesList : [];
+%>
+<div class="stack-item">
+  <h3><%= _title %></h3>
+  <% if (_desc) { %>
+    <p><%= _desc %></p>
+  <% } %>
+  <%- include("./tourney_prefs_form", {
+    tourneyKind: _kind,
+    tourneyRedirect: _tourneyRedirect,
+    tourneyPrefs: _tp,
+    tourneyModsList: _modList,
+    tourneySkillsetsList: _skillList,
+    tourneyRankRangesList: _rankList,
+  }) %>
+</div>

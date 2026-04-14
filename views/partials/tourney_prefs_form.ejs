@@ -1,0 +1,64 @@
+<%
+  const tp = typeof tourneyPrefs !== "undefined" ? tourneyPrefs : null;
+  const savedMods = tp && Array.isArray(tp.mods) ? tp.mods : [];
+  const savedSkillsets = tp && Array.isArray(tp.skillsets) ? tp.skillsets : [];
+  const savedRanks = tp && Array.isArray(tp.rank_ranges) ? tp.rank_ranges : [];
+  const _tourneyRedirect = typeof tourneyRedirect !== "undefined" ? tourneyRedirect : "/preferences";
+  const _kind = typeof tourneyKind !== "undefined" && tourneyKind === "filter" ? "filter" : "profile";
+  const _modsLabel = _kind === "filter" ? "mods i want to see" : "mods i play";
+  const _skillsLabel = _kind === "filter" ? "skillsets i want to see" : "skillsets";
+  const _ranksLabel = _kind === "filter" ? "rank ranges i want to see" : "rank range";
+  const _saveLabel = _kind === "filter" ? "save tourney browse filters" : "save tourney profile setup";
+  // fallback lists so pills still render even if include locals get weird
+  const modChoices = Array.isArray(tourneyModsList) && tourneyModsList.length
+    ? tourneyModsList
+    : ["nm", "hr", "hd", "dt"];
+  const skillChoices = Array.isArray(tourneySkillsetsList) && tourneySkillsetsList.length
+    ? tourneySkillsetsList
+    : ["aim", "flow aim", "streams", "alt", "tech", "gimmick", "low ar", "stamina", "speed", "tapping", "dt alt", "antimod", "all rounder", "wokeness"];
+  const rankChoices = Array.isArray(tourneyRankRangesList) && tourneyRankRangesList.length
+    ? tourneyRankRangesList
+    : ["open", "1k-5k", "5k-10k", "10k-50k", "50k+"];
+%>
+<form action="/tourney-preferences" method="post" class="form tourney-prefs-form" style="margin-top: 0.75rem">
+  <input type="hidden" name="tourney_redirect" value="<%= _tourneyRedirect %>" />
+  <input type="hidden" name="tourney_kind" value="<%= _kind %>" />
+
+  <div class="form-row">
+    <label><%= _modsLabel %></label>
+    <div class="pref-pill-row">
+      <% modChoices.forEach(function(m) { %>
+        <label class="pref-pill <%= savedMods.includes(m) ? 'active' : '' %>">
+          <input type="checkbox" name="tourney_mods" value="<%= m %>" <%= savedMods.includes(m) ? 'checked' : '' %> />
+          <%= m %>
+        </label>
+      <% }); %>
+    </div>
+  </div>
+
+  <div class="form-row">
+    <label><%= _skillsLabel %></label>
+    <div class="pref-pill-row">
+      <% skillChoices.forEach(function(s) { %>
+        <label class="pref-pill <%= savedSkillsets.includes(s) ? 'active' : '' %>">
+          <input type="checkbox" name="tourney_skillsets" value="<%= s %>" <%= savedSkillsets.includes(s) ? 'checked' : '' %> />
+          <%= s %>
+        </label>
+      <% }); %>
+    </div>
+  </div>
+
+  <div class="form-row">
+    <label><%= _ranksLabel %></label>
+    <div class="pref-pill-row">
+      <% rankChoices.forEach(function(r) { %>
+        <label class="pref-pill <%= savedRanks.includes(r) ? 'active' : '' %>">
+          <input type="checkbox" name="tourney_rank_ranges" value="<%= r %>" <%= savedRanks.includes(r) ? 'checked' : '' %> />
+          <%= r === 'open' ? 'open rank' : r %>
+        </label>
+      <% }); %>
+    </div>
+  </div>
+
+  <button class="btn tiny" type="submit" style="width: fit-content"><%= _saveLabel %></button>
+</form>
