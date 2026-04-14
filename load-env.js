@@ -6,6 +6,12 @@ const dotenv = require("dotenv");
 const envPath = path.join(__dirname, ".env");
 
 function loadEnvFile() {
+  // cloud run should use real env vars / secrets, not whatever .env got baked into the image
+  // (local .env often has windows paths that don't exist in linux containers)
+  if (process.env.K_SERVICE || process.env.CLOUD_RUN_JOB) {
+    return;
+  }
+
   if (!fs.existsSync(envPath)) {
     console.warn(`[env] no .env file at ${envPath}`);
     return;
