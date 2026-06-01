@@ -398,21 +398,37 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const ageBackdrop = onLegalPage ? null : qs("[data-age-backdrop]");
     const ageAgreeBtn = onLegalPage ? null : qs("[data-age-agree]");
+    const cookieBackdrop = onLegalPage ? null : qs("[data-cookie-backdrop]");
+    const cookieEnableBtn = onLegalPage ? null : qs("[data-cookie-enable]");
+    const cookieDisableBtn = onLegalPage ? null : qs("[data-cookie-disable]");
     const ageLegalCbs = onLegalPage ? [] : document.querySelectorAll(".age-legal-cb");
     if (ageBackdrop && ageAgreeBtn) {
-      const ok = localStorage.getItem("age_ok") === "1";
-      if (!ok) {
-        ageBackdrop.hidden = false;
+      const ageOk = localStorage.getItem("age_ok") === "1";
+      const cookieOk = localStorage.getItem("cookie_ok") === "1";
+
+      function openBackdrop(backdrop) {
+        if (!backdrop) return;
+        backdrop.hidden = false;
         document.body.style.overflow = "hidden";
-        // move focus into the dialog so keyboard users aren't stuck outside
-        var ageDialog = ageBackdrop.querySelector("[role='dialog']");
-        if (ageDialog) ageDialog.focus();
+        var dialog = backdrop.querySelector("[role='dialog']");
+        if (dialog) dialog.focus();
       }
 
-      // trap Tab/Shift+Tab inside the dialog while it's open
-      ageBackdrop.addEventListener("keydown", function(e) {
+      function closeBackdrop(backdrop) {
+        if (!backdrop) return;
+        backdrop.hidden = true;
+      }
+
+      if (!ageOk) {
+        openBackdrop(ageBackdrop);
+      } else if (cookieBackdrop && !cookieOk) {
+        openBackdrop(cookieBackdrop);
+      }
+
+      // trap Tab/Shift+Tab inside whichever modal is open
+      function trapModalFocus(backdrop, e) {
         if (e.key !== "Tab") return;
-        var dialog = ageBackdrop.querySelector("[role='dialog']");
+        var dialog = backdrop.querySelector("[role='dialog']");
         if (!dialog) return;
         var focusable = Array.from(dialog.querySelectorAll(
           'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -427,7 +443,16 @@ document.addEventListener("DOMContentLoaded", () => {
           e.preventDefault();
           first.focus();
         }
+      }
+
+      ageBackdrop.addEventListener("keydown", function(e) {
+        trapModalFocus(ageBackdrop, e);
       });
+      if (cookieBackdrop) {
+        cookieBackdrop.addEventListener("keydown", function(e) {
+          trapModalFocus(cookieBackdrop, e);
+        });
+      }
 
       // check which pages have been visited and unlock those checkboxes
       var visitKeys = ["visited_terms", "visited_privacy", "visited_disclaimer"];
@@ -470,9 +495,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
       ageAgreeBtn.addEventListener("click", function() {
         localStorage.setItem("age_ok", "1");
-        ageBackdrop.hidden = true;
-        document.body.style.overflow = "";
+        closeBackdrop(ageBackdrop);
+        if (cookieBackdrop && localStorage.getItem("cookie_ok") !== "1") {
+          openBackdrop(cookieBackdrop);
+        } else {
+          document.body.style.overflow = "";
+        }
       });
+
+      if (cookieEnableBtn) {
+        cookieEnableBtn.addEventListener("click", function() {
+          localStorage.setItem("cookie_ok", "1");
+          closeBackdrop(cookieBackdrop);
+          document.body.style.overflow = "";
+        });
+      }
+
+      if (cookieDisableBtn) {
+        cookieDisableBtn.addEventListener("click", function() {
+          localStorage.removeItem("cookie_ok");
+          closeBackdrop(cookieBackdrop);
+          document.body.style.overflow = "";
+          window.location.href = "https://www.google.com";
+        });
+      }
     }
   } catch (e) {
     // ignore
@@ -485,23 +531,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   renderHomeShowcase();
   renderBrowseStack();
-
-  // landing: talking cat bubble cycles through phrases
-  const meowBubble = qs(".rr-meow-bubble");
-  if (meowBubble) {
-    const meowPhases = [
-      "meow meow meow mlep mrrp",
-      "im a homosexual",
-      "im gay",
-      "meowwwwwwwwww",
-      "ARF ARF",
-    ];
-    let meowIdx = 0;
-    setInterval(() => {
-      meowIdx = (meowIdx + 1) % meowPhases.length;
-      meowBubble.textContent = meowPhases[meowIdx];
-    }, 3500);
-  }
 
   // report modal
   const reportBackdrop = qs("[data-report-backdrop]");

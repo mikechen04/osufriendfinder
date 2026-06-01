@@ -266,6 +266,12 @@ a {
   margin: 0.25rem 0 1rem;
 }
 
+.age-cookie-text {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-top: -0.2rem;
+}
+
 .age-checks {
   display: flex;
   flex-direction: column;
@@ -363,6 +369,8 @@ a {
 .age-actions {
   display: flex;
   justify-content: flex-start;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 .modal-top {
@@ -749,70 +757,6 @@ a {
   .rr-feature-grid {
     grid-template-columns: 1fr;
   }
-}
-
-/* cat under how it works */
-.rr-meow-cat {
-  margin-top: 2rem;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-}
-
-.rr-meow-img {
-  width: 96px;
-  height: 96px;
-  object-fit: contain;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.95);
-  box-shadow: var(--shadow);
-  background: rgba(255, 255, 255, 0.5);
-}
-
-.rr-meow-bubble {
-  margin: 0;
-  max-width: 22rem;
-  padding: 0.85rem 1.1rem;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--text);
-  background: var(--bg-card);
-  border: 1px solid rgba(255, 255, 255, 0.95);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
-}
-
-/* make it look like the cat is "saying" it */
-.rr-meow-bubble {
-  position: relative;
-}
-
-.rr-meow-bubble::before {
-  content: "";
-  position: absolute;
-  left: -10px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 0;
-  height: 0;
-  border-top: 10px solid transparent;
-  border-bottom: 10px solid transparent;
-  border-right: 12px solid rgba(255, 255, 255, 0.95);
-}
-
-.rr-meow-bubble::after {
-  content: "";
-  position: absolute;
-  left: -8px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 0;
-  height: 0;
-  border-top: 9px solid transparent;
-  border-bottom: 9px solid transparent;
-  border-right: 11px solid var(--bg-card);
 }
 
 /* generic cards (browse, profile, etc.) */
