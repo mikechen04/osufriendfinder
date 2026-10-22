@@ -128,10 +128,17 @@ function badgeCountFromOsuMe(me) {
 }
 
 // pastel frame on browse + profile for these ppl (match osu username or display name)
-const CUTE_TINT_NAMES = new Set(["soft kitten", "chinese foid", "risui", "klbby"]);
+// comma-separated osu usernames set in env (kept out of the public repo)
+function parseNameList(raw) {
+  return String(raw || "")
+    .split(",")
+    .map(x => x.toLowerCase().trim().replace(/_/g, " "))
+    .filter(Boolean);
+}
+const CUTE_TINT_NAMES = new Set(parseNameList(process.env.CUTE_TINT_NAMES));
 
 // browse stack: these two always first (if they pass filters), then everyone else shuffled
-const BROWSE_PIN_ORDER = ["soft kitten", "chinese foid"];
+const BROWSE_PIN_ORDER = parseNameList(process.env.BROWSE_PIN_NAMES);
 
 function normCuteName(s) {
   return String(s || "")
@@ -442,7 +449,7 @@ app.use(async (req, res, next) => {
         }
       }
       if ((!req.session || !req.session.userId) && ADMIN_EMERGENCY_CODE2) {
-        const tokenF = cookies.admin_override_foid || "";
+        const tokenF = cookies.admin_override_2 || "";
         if (tokenF && isValidOwnerToken(ADMIN_EMERGENCY_CODE2, tokenF)) {
           if (req.session) req.session.userId = ADMIN_SECOND_OSU_ID;
         }
@@ -473,7 +480,7 @@ app.use(async (req, res, next) => {
       ]);
       if (banSnap.exists() || blacklistOk) {
         clearCookie(res, "admin_override");
-        clearCookie(res, "admin_override_foid");
+        clearCookie(res, "admin_override_2");
         return req.session.destroy(() => {
           res.redirect("/?banned=1");
         });
@@ -584,7 +591,7 @@ function readOnlyBlockWrites(req, res, next) {
   }
 
   if (p === "/logout") return next();
-  if (p === "/emergency-login" || p === "/emergency-foid-login") return next();
+  if (p === "/emergency-login" || p === "/emergency-admin2-login") return next();
   if (p === "/enter") return next();
   if (p === "/guest/exit") return next();
 
@@ -916,7 +923,7 @@ app.post("/emergency-login", (req, res) => {
   }
 
   // log in as owner (cookie-based so it works across cloud run instances)
-  clearCookie(res, "admin_override_foid");
+  clearCookie(res, "admin_override_2");
   if (req.session) req.session.userId = ADMIN_OSU_ID;
   const token = makeOwnerToken(ADMIN_EMERGENCY_CODE);
   setCookie(res, "admin_override", token, {
@@ -931,12 +938,12 @@ app.post("/emergency-login", (req, res) => {
   return res.redirect("/browse");
 });
 
-app.get("/emergency-foid", (req, res) => {
-  res.render("pages/emergency_foid", { title: "emergency" });
+app.get("/emergency-admin2", (req, res) => {
+  res.render("pages/emergency_admin2", { title: "emergency" });
 });
 
-app.post("/emergency-foid-login", (req, res) => {
-  if (checkIpRateLimit(req, "emergency-foid-login", 5, 15 * 60 * 1000)) {
+app.post("/emergency-admin2-login", (req, res) => {
+  if (checkIpRateLimit(req, "emergency-admin2-login", 5, 15 * 60 * 1000)) {
     req.session.flash = { type: "error", message: "too many attempts, try later" };
     return res.redirect("/");
   }
@@ -946,13 +953,13 @@ app.post("/emergency-foid-login", (req, res) => {
   const valid = ADMIN_EMERGENCY_CODE2 && timingSafeEqual(code, ADMIN_EMERGENCY_CODE2);
   if (!valid) {
     req.session.flash = { type: "error", message: "invalid" };
-    return res.redirect("/emergency-foid");
+    return res.redirect("/emergency-admin2");
   }
 
   clearCookie(res, "admin_override");
   if (req.session) req.session.userId = ADMIN_SECOND_OSU_ID;
   const token = makeOwnerToken(ADMIN_EMERGENCY_CODE2);
-  setCookie(res, "admin_override_foid", token, {
+  setCookie(res, "admin_override_2", token, {
     path: "/",
     maxAgeSeconds: 7 * 24 * 60 * 60,
     httpOnly: true,
@@ -1065,7 +1072,7 @@ app.get("/auth/osu/callback", async (req, res) => {
 app.post("/logout", (req, res) => {
   // clear emergency override cookies
   clearCookie(res, "admin_override");
-  clearCookie(res, "admin_override_foid");
+  clearCookie(res, "admin_override_2");
   req.session.destroy(() => {
     res.redirect("/");
   });
@@ -1630,7 +1637,7 @@ app.post("/profile", requireAuth, async (req, res) => {
         console.error(e);
       }
       clearCookie(res, "admin_override");
-      clearCookie(res, "admin_override_foid");
+      clearCookie(res, "admin_override_2");
       return req.session.destroy(() => {
         res.redirect("/?banned=1");
       });
