@@ -156,10 +156,17 @@ function badgeCountFromOsuMe(me) {
 }
 
 // pastel frame on browse + profile for these ppl (match osu username or display name)
-const CUTE_TINT_NAMES = new Set(["soft kitten", "chinese foid", "risui", "klbby"]);
+// comma-separated osu usernames set in env (kept out of the public repo)
+function parseNameList(raw) {
+  return String(raw || "")
+    .split(",")
+    .map(x => x.toLowerCase().trim().replace(/_/g, " "))
+    .filter(Boolean);
+}
+const CUTE_TINT_NAMES = new Set(parseNameList(process.env.CUTE_TINT_NAMES));
 
 // browse stack: these two always first (if they pass filters), then everyone else shuffled
-const BROWSE_PIN_ORDER = ["soft kitten", "chinese foid"];
+const BROWSE_PIN_ORDER = parseNameList(process.env.BROWSE_PIN_NAMES);
 
 function normCuteName(s) {
   return String(s || "")
@@ -321,53 +328,22 @@ async function buildFeedList(fdb, me) {
   });
 }
 
-// admin: search all dms for a substring (dedupe in+out copies of same send)
-async function adminSearchInboxMessages(keyword) {
-  const q = String(keyword || "")
-    .trim()
-    .toLowerCase();
-  if (q.length < 2) {
-    return { matches: [], truncated: false, error: "use at least 2 characters" };
+// admin: DMs are private. A thread may only be opened when one of the two people
+// reported it from their inbox ("from_inbox" report) -- there is no keyword search
+// and no browsing of arbitrary users' inboxes.
+async function adminHasInboxReportBetween(userA, userB) {
+  const a = String(userA || "").trim();
+  const b = String(userB || "").trim();
+  if (!a || !b || a === b) return false;
+  const snap = await rtdb().ref(`reports/${ADMIN_OSU_ID}`).get();
+  if (!snap.exists()) return false;
+  for (const r of Object.values(snap.val() || {})) {
+    if (!r || r.from_inbox !== true) continue;
+    const from = String(r.from_user_id || "");
+    const to = String(r.to_user_id || "");
+    if ((from === a && to === b) || (from === b && to === a)) return true;
   }
-  const fdb = rtdb();
-  const snap = await fdb.ref("inbox").get();
-  if (!snap.exists()) {
-    return { matches: [], truncated: false, error: null };
-  }
-  const all = snap.val();
-  const seen = new Set();
-  const matches = [];
-  for (const [inboxOwnerId, msgs] of Object.entries(all || {})) {
-    if (!msgs || typeof msgs !== "object") continue;
-    for (const [msgId, m] of Object.entries(msgs)) {
-      if (!m || m.body == null) continue;
-      const body = String(m.body);
-      if (!body.toLowerCase().includes(q)) continue;
-      const dedupeKey = `${m.created_at}|${m.from_user_id}|${m.to_user_id}`;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
-      matches.push({
-        msg_id: msgId,
-        inbox_owner_id: String(inboxOwnerId),
-        body,
-        created_at: m.created_at || 0,
-        direction: m.direction || "",
-        from_user_id: m.from_user_id ? String(m.from_user_id) : "",
-        from_username: m.from_username || "unknown",
-        from_osu_id: m.from_osu_id || null,
-        to_user_id: m.to_user_id ? String(m.to_user_id) : "",
-        to_username: m.to_username || null,
-        to_osu_id: m.to_osu_id || null,
-      });
-    }
-  }
-  matches.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
-  let truncated = false;
-  if (matches.length > 200) {
-    truncated = true;
-    matches.splice(200);
-  }
-  return { matches, truncated, error: null };
+  return false;
 }
 
 // admin: full thread between two user ids (only reads inbox/a and inbox/b — not whole tree)
@@ -501,7 +477,7 @@ app.use(async (req, res, next) => {
         }
       }
       if ((!req.session || !req.session.userId) && ADMIN_EMERGENCY_CODE2) {
-        const tokenF = cookies.admin_override_foid || "";
+        const tokenF = cookies.admin_override_2 || "";
         if (tokenF && isValidOwnerToken(ADMIN_EMERGENCY_CODE2, tokenF)) {
           if (req.session) req.session.userId = ADMIN_SECOND_OSU_ID;
         }
@@ -536,7 +512,7 @@ app.use(async (req, res, next) => {
       );
       if (banSnap && typeof banSnap.exists === "function" && (banSnap.exists() || blacklistOk)) {
         clearCookie(res, "admin_override");
-        clearCookie(res, "admin_override_foid");
+        clearCookie(res, "admin_override_2");
         return req.session.destroy(() => {
           res.redirect("/?banned=1");
         });
@@ -656,7 +632,7 @@ function readOnlyBlockWrites(req, res, next) {
   }
 
   if (p === "/logout") return next();
-  if (p === "/emergency-login" || p === "/emergency-foid-login") return next();
+  if (p === "/emergency-login" || p === "/emergency-admin2-login") return next();
   if (p === "/enter") return next();
   if (p === "/guest/exit") return next();
 
@@ -996,7 +972,7 @@ app.post("/emergency-login", (req, res) => {
   }
 
   // log in as owner (cookie-based so it works across cloud run instances)
-  clearCookie(res, "admin_override_foid");
+  clearCookie(res, "admin_override_2");
   if (req.session) req.session.userId = ADMIN_OSU_ID;
   const token = makeOwnerToken(ADMIN_EMERGENCY_CODE);
   setCookie(res, "admin_override", token, {
@@ -1011,12 +987,12 @@ app.post("/emergency-login", (req, res) => {
   return res.redirect("/browse");
 });
 
-app.get("/emergency-foid", (req, res) => {
-  res.render("pages/emergency_foid", { title: "emergency" });
+app.get("/emergency-admin2", (req, res) => {
+  res.render("pages/emergency_admin2", { title: "emergency" });
 });
 
-app.post("/emergency-foid-login", (req, res) => {
-  if (checkIpRateLimit(req, "emergency-foid-login", 5, 15 * 60 * 1000)) {
+app.post("/emergency-admin2-login", (req, res) => {
+  if (checkIpRateLimit(req, "emergency-admin2-login", 5, 15 * 60 * 1000)) {
     req.session.flash = { type: "error", message: "too many attempts, try later" };
     return res.redirect("/");
   }
@@ -1026,13 +1002,13 @@ app.post("/emergency-foid-login", (req, res) => {
   const valid = ADMIN_EMERGENCY_CODE2 && timingSafeEqual(code, ADMIN_EMERGENCY_CODE2);
   if (!valid) {
     req.session.flash = { type: "error", message: "invalid" };
-    return res.redirect("/emergency-foid");
+    return res.redirect("/emergency-admin2");
   }
 
   clearCookie(res, "admin_override");
   if (req.session) req.session.userId = ADMIN_SECOND_OSU_ID;
   const token = makeOwnerToken(ADMIN_EMERGENCY_CODE2);
-  setCookie(res, "admin_override_foid", token, {
+  setCookie(res, "admin_override_2", token, {
     path: "/",
     maxAgeSeconds: 7 * 24 * 60 * 60,
     httpOnly: true,
@@ -1145,7 +1121,7 @@ app.get("/auth/osu/callback", async (req, res) => {
 app.post("/logout", (req, res) => {
   // clear emergency override cookies
   clearCookie(res, "admin_override");
-  clearCookie(res, "admin_override_foid");
+  clearCookie(res, "admin_override_2");
   req.session.destroy(() => {
     res.redirect("/");
   });
@@ -1710,7 +1686,7 @@ app.post("/profile", requireAuth, async (req, res) => {
         console.error(e);
       }
       clearCookie(res, "admin_override");
-      clearCookie(res, "admin_override_foid");
+      clearCookie(res, "admin_override_2");
       return req.session.destroy(() => {
         res.redirect("/?banned=1");
       });
@@ -1905,51 +1881,24 @@ adminRouter.post("/wipe-user", async (req, res) => {
   }
 });
 
-adminRouter.get("/messages", async (req, res) => {
-  const rawQ = String(req.query.q || "").trim();
-  if (!rawQ) {
-    return res.render("pages/admin_message_search", {
-      title: "admin · messages",
-      keyword: "",
-      matches: [],
-      truncated: false,
-      error: null,
-    });
-  }
-
-  try {
-    const { matches, truncated, error } = await adminSearchInboxMessages(rawQ);
-    return res.render("pages/admin_message_search", {
-      title: "admin · messages",
-      keyword: rawQ,
-      matches,
-      truncated,
-      error,
-    });
-  } catch (e) {
-    console.error(e);
-    return res.render("pages/admin_message_search", {
-      title: "admin · messages",
-      keyword: rawQ,
-      matches: [],
-      truncated: false,
-      error: "search failed (check server logs)",
-    });
-  }
-});
-
-// full chat between two accounts — admins only (requireAdmin before any data load)
+// full chat between two accounts — admins only, and only for a conversation that was reported from the inbox
 adminRouter.get("/messages/thread", async (req, res) => {
   const a = String(req.query.a || "").trim();
   const b = String(req.query.b || "").trim();
-  const returnQ = String(req.query.return_q || "").trim();
 
   if (!a || !b || a === b) {
     req.session.flash = { type: "error", message: "bad thread link" };
-    return res.redirect("/admin/messages");
+    return res.redirect("/admin/reports");
   }
 
   try {
+    if (!(await adminHasInboxReportBetween(a, b))) {
+      req.session.flash = {
+        type: "error",
+        message: "no report covers this conversation, so it can't be opened",
+      };
+      return res.redirect("/admin/reports");
+    }
     const fdb = rtdb();
     const [{ messages, error }, userSnapA, userSnapB] = await Promise.all([
       adminLoadThreadBetween(a, b),
@@ -1959,7 +1908,7 @@ adminRouter.get("/messages/thread", async (req, res) => {
 
     if (error) {
       req.session.flash = { type: "error", message: error };
-      return res.redirect("/admin/messages");
+      return res.redirect("/admin/reports");
     }
 
     const ua = userSnapA.exists() ? userSnapA.val() : {};
@@ -1976,12 +1925,11 @@ adminRouter.get("/messages/thread", async (req, res) => {
       avatarA: ua.avatar_url || null,
       avatarB: ub.avatar_url || null,
       messages,
-      return_q: returnQ,
     });
   } catch (e) {
     console.error(e);
     req.session.flash = { type: "error", message: "failed to load thread" };
-    return res.redirect("/admin/messages");
+    return res.redirect("/admin/reports");
   }
 });
 
@@ -2016,82 +1964,17 @@ adminRouter.get("/view-profile", async (req, res) => {
         prefs: null,
         cute_tint: false,
         adminViewUserId: null,
-        convoRows: [],
-        recentMessages: [],
       });
     }
 
-    const [profileSnap, prefsSnap, inboxSnap] = await Promise.all([
+    const [profileSnap, prefsSnap] = await Promise.all([
       fdb.ref(`profiles/${targetId}`).get(),
       fdb.ref(`prefs/${targetId}`).get(),
-      fdb.ref(`inbox/${targetId}`).get(),
     ]);
 
     const user = usersObj[targetId] || null;
     const profile = profileSnap.exists() ? profileSnap.val() : null;
     const prefs = prefsSnap.exists() ? prefsSnap.val() : null;
-    const inboxObj = inboxSnap.exists() ? inboxSnap.val() : {};
-    const allMessages = Object.values(inboxObj || {}).filter(Boolean);
-
-    const convoMap = {};
-    for (const m of allMessages) {
-      const dir = m.direction === "out" ? "out" : "in";
-      const otherId = dir === "out" ? String(m.to_user_id || "") : String(m.from_user_id || "");
-      if (!otherId) continue;
-
-      const otherUser = usersObj[otherId] || null;
-      const nameFromMsg = dir === "out" ? (m.to_username || "") : (m.from_username || "");
-      const avatarFromMsg = dir === "out" ? (m.to_avatar_url || null) : (m.from_avatar_url || null);
-
-      if (!convoMap[otherId]) {
-        convoMap[otherId] = {
-          other_id: otherId,
-          name: nameFromMsg || (otherUser && otherUser.username ? otherUser.username : `id ${otherId}`),
-          avatar_url: avatarFromMsg || (otherUser && otherUser.avatar_url ? otherUser.avatar_url : null),
-          last_body: "",
-          last_at: 0,
-          unread: 0,
-          total: 0,
-        };
-      }
-
-      const c = convoMap[otherId];
-      const at = Number(m.created_at || 0);
-      c.total += 1;
-      if (dir !== "out" && !m.read_at) c.unread += 1;
-
-      if (at >= (c.last_at || 0)) {
-        c.last_at = at;
-        c.last_body = (m.body || "").toString();
-        c.name = nameFromMsg || c.name;
-        c.avatar_url = avatarFromMsg || c.avatar_url;
-      }
-    }
-
-    const convoRows = Object.values(convoMap).sort((a, b) => (b.last_at || 0) - (a.last_at || 0));
-
-    const recentMessages = allMessages
-      .map(m => {
-        const dir = m.direction === "out" ? "out" : "in";
-        const otherId = dir === "out" ? String(m.to_user_id || "") : String(m.from_user_id || "");
-        const otherUser = usersObj[otherId] || null;
-        const nameFromMsg = dir === "out" ? (m.to_username || "") : (m.from_username || "");
-        // pick correct avatar: for incoming the sender is the other person, for outgoing the sender is the viewed user
-        const otherAvatarFromMsg = dir === "out" ? (m.to_avatar_url || null) : (m.from_avatar_url || null);
-        const otherAvatar = otherAvatarFromMsg || (otherUser && otherUser.avatar_url ? otherUser.avatar_url : null);
-        return {
-          id: String(m.id || ""),
-          dir,
-          other_id: otherId,
-          other_name: nameFromMsg || (otherUser && otherUser.username ? otherUser.username : (otherId ? `id ${otherId}` : "unknown")),
-          other_avatar_url: otherAvatar,
-          body: (m.body || "").toString(),
-          created_at: Number(m.created_at || 0),
-          read_at: m.read_at || null,
-        };
-      })
-      .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
-      .slice(0, 80);
 
     const cute_tint = user ? userHasCuteTint(user.username, profile ? profile.display_name : null) : false;
     return res.render("pages/admin_view_profile", {
@@ -2101,8 +1984,6 @@ adminRouter.get("/view-profile", async (req, res) => {
       prefs,
       cute_tint,
       adminViewUserId: targetId,
-      convoRows,
-      recentMessages,
     });
   } catch (e) {
     console.error(e);
@@ -2113,8 +1994,6 @@ adminRouter.get("/view-profile", async (req, res) => {
       prefs: null,
       cute_tint: false,
       adminViewUserId: null,
-      convoRows: [],
-      recentMessages: [],
     });
   }
 });
@@ -2546,6 +2425,7 @@ app.post("/account/destroy", requireAuth, async (req, res) => {
     updates[`users/${userId}`] = null;
     updates[`profiles/${userId}`] = null;
     updates[`inbox/${userId}`] = null;
+    updates[`prefs/${userId}`] = null;
 
     // also delete messages you sent to other people (stored in their inbox)
     const inboxSnap = await fdb.ref("inbox").get();
