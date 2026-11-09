@@ -384,8 +384,12 @@ function initPrefPills() {
 
 document.addEventListener("DOMContentLoaded", () => {
   initPrefPills();
-  // 18+ gate (only shows once)
+  // 18+ / cookie gates — disabled while this is a demo site (set false to restore)
+  const DEMO_SKIP_GATES = true;
   try {
+    if (DEMO_SKIP_GATES) {
+      // skip
+    } else {
     // mark current page as visited so modal checkboxes can be unlocked
     var path = window.location.pathname;
     if (path === "/terms") localStorage.setItem("visited_terms", "1");
@@ -520,6 +524,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       }
     }
+    } // end DEMO_SKIP_GATES else
   } catch (e) {
     // ignore
   }

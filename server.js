@@ -14,7 +14,35 @@ try {
 }
 
 const { osuAuthorizeUrl, osuExchangeCodeForToken, osuGetMe } = require("./osu");
-const { rtdb } = require("./firebase");
+const { rtdb, FIREBASE_DISABLED } = require("./firebase");
+
+// firebase .get() can hang forever when the RTDB project is deactivated — never leave requests waiting
+function withTimeout(promise, ms, fallback) {
+  let settled = false;
+  return new Promise((resolve) => {
+    const t = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(fallback);
+    }, ms);
+    Promise.resolve(promise).then(
+      (v) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(t);
+        resolve(v);
+      },
+      () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(t);
+        resolve(fallback);
+      }
+    );
+  });
+}
+
+const RTDB_TIMEOUT_MS = parseInt(process.env.RTDB_TIMEOUT_MS || "2500", 10);
 
 const app = express();
 
@@ -498,11 +526,15 @@ app.use(async (req, res, next) => {
       const fdb = rtdb();
 
       // dynamic ban list in rtdb + static file blacklist + rtdb blacklist — kick session so they cant keep browsing
-      const [banSnap, blacklistOk] = await Promise.all([
-        fdb.ref(`osu_bans/${userId}`).get(),
-        isOsuIdBlacklisted(fdb, userId),
-      ]);
-      if (banSnap.exists() || blacklistOk) {
+      const [banSnap, blacklistOk] = await withTimeout(
+        Promise.all([
+          fdb.ref(`osu_bans/${userId}`).get(),
+          isOsuIdBlacklisted(fdb, userId),
+        ]),
+        RTDB_TIMEOUT_MS,
+        [null, false]
+      );
+      if (banSnap && typeof banSnap.exists === "function" && (banSnap.exists() || blacklistOk)) {
         clearCookie(res, "admin_override");
         clearCookie(res, "admin_override_foid");
         return req.session.destroy(() => {
@@ -510,54 +542,63 @@ app.use(async (req, res, next) => {
         });
       }
 
-      const userSnap = await fdb.ref(`users/${userId}`).get();
-      const profileSnap = await fdb.ref(`profiles/${userId}`).get();
-      const inboxSnap = await fdb.ref(`inbox/${userId}`).get();
-      const prefsSnap = await fdb.ref(`prefs/${userId}`).get();
+      const snaps = await withTimeout(
+        Promise.all([
+          fdb.ref(`users/${userId}`).get(),
+          fdb.ref(`profiles/${userId}`).get(),
+          fdb.ref(`inbox/${userId}`).get(),
+          fdb.ref(`prefs/${userId}`).get(),
+        ]),
+        RTDB_TIMEOUT_MS,
+        null
+      );
 
-      const user = userSnap.exists() ? userSnap.val() : null;
-      const profile = profileSnap.exists() ? profileSnap.val() : null;
-      const inboxObj = inboxSnap.exists() ? inboxSnap.val() : {};
-      const prefs = prefsSnap.exists() ? prefsSnap.val() : null;
+      if (snaps) {
+        const [userSnap, profileSnap, inboxSnap, prefsSnap] = snaps;
+        const user = userSnap.exists() ? userSnap.val() : null;
+        const profile = profileSnap.exists() ? profileSnap.val() : null;
+        const inboxObj = inboxSnap.exists() ? inboxSnap.val() : {};
+        const prefs = prefsSnap.exists() ? prefsSnap.val() : null;
 
-      if (user) {
-        res.locals.me = {
-          id: userId,
-          osu_id: user.osu_id,
-          username: user.username,
-          avatar_url: user.avatar_url || null,
-          country_code: user.country_code || null,
-          global_rank: user.global_rank || null,
-          badge_count: typeof user.badge_count === "number" ? user.badge_count : null,
-          age: profile ? profile.age : null,
-          bio: profile ? profile.bio : null,
-          // if they never set tourney_bio yet, fall back to friend bio so old accounts still work
-          tourney_bio: profile
-            ? (profile.tourney_bio != null && String(profile.tourney_bio).trim() !== ""
-                ? profile.tourney_bio
-                : profile.bio)
-            : null,
-          gender: profile ? profile.gender : null,
-          discord: profile ? profile.discord : null,
-          display_name: profile ? profile.display_name : null,
-          cute_tint: userHasCuteTint(user.username, profile ? profile.display_name : null),
-        };
-        res.locals.prefs = prefs;
-        res.locals.isStaff = isAdmin(res.locals.me);
-        res.locals.isAdmin =
-          res.locals.isStaff && !(req.session && req.session.previewAsUser);
-        res.locals.viewAsRegularUser = !!(
-          req.session &&
-          req.session.previewAsUser &&
-          res.locals.isStaff
-        );
+        if (user) {
+          res.locals.me = {
+            id: userId,
+            osu_id: user.osu_id,
+            username: user.username,
+            avatar_url: user.avatar_url || null,
+            country_code: user.country_code || null,
+            global_rank: user.global_rank || null,
+            badge_count: typeof user.badge_count === "number" ? user.badge_count : null,
+            age: profile ? profile.age : null,
+            bio: profile ? profile.bio : null,
+            // if they never set tourney_bio yet, fall back to friend bio so old accounts still work
+            tourney_bio: profile
+              ? (profile.tourney_bio != null && String(profile.tourney_bio).trim() !== ""
+                  ? profile.tourney_bio
+                  : profile.bio)
+              : null,
+            gender: profile ? profile.gender : null,
+            discord: profile ? profile.discord : null,
+            display_name: profile ? profile.display_name : null,
+            cute_tint: userHasCuteTint(user.username, profile ? profile.display_name : null),
+          };
+          res.locals.prefs = prefs;
+          res.locals.isStaff = isAdmin(res.locals.me);
+          res.locals.isAdmin =
+            res.locals.isStaff && !(req.session && req.session.previewAsUser);
+          res.locals.viewAsRegularUser = !!(
+            req.session &&
+            req.session.previewAsUser &&
+            res.locals.isStaff
+          );
 
-        // count unread messages
-        let unread = 0;
-        for (const m of Object.values(inboxObj || {})) {
-          if (m && !m.read_at) unread += 1;
+          // count unread messages
+          let unread = 0;
+          for (const m of Object.values(inboxObj || {})) {
+            if (m && !m.read_at) unread += 1;
+          }
+          res.locals.inboxUnread = unread;
         }
-        res.locals.inboxUnread = unread;
       }
     }
 
@@ -686,8 +727,12 @@ function escapeHtml(s) {
 // shared with /api/site-status so github pages static index can show the same banners
 async function fetchSiteAnnouncement() {
   try {
-    const annSnap = await rtdb().ref("site/announcement").get();
-    if (annSnap.exists()) {
+    const annSnap = await withTimeout(
+      rtdb().ref("site/announcement").get(),
+      RTDB_TIMEOUT_MS,
+      null
+    );
+    if (annSnap && typeof annSnap.exists === "function" && annSnap.exists()) {
       const v = annSnap.val();
       const annText = (v.text || "").toString().trim();
       const exp = Number(v.expires_at);
@@ -807,7 +852,11 @@ async function sendHomeHtml(req, res) {
     try {
       const me = res.locals.me;
       const adminSeeAll = me && isAdmin(me);
-      const users = await getFeaturedUsers(userId, adminSeeAll);
+      const users = await withTimeout(
+        getFeaturedUsers(userId, adminSeeAll),
+        RTDB_TIMEOUT_MS,
+        []
+      );
       // safe to inject as json — no user-controlled html here
       showcaseScript = `<script>window.__SHOWCASE__=${JSON.stringify(users)};</script>`;
     } catch (e) {
@@ -2755,10 +2804,22 @@ app.get("/inbox/:otherId", requireAuth, requireProfile, async (req, res) => {
   res.render("pages/inbox_thread", { title: "inbox", me, otherId, other, messages: thread, view });
 });
 
-// home page assets live next to index.html (styles.css + app.js) — explicit routes so deploy always finds them
+// home page assets live next to index.html — explicit routes so deploy always finds them
 app.get("/styles.css", (req, res) => {
   res.type("text/css");
   res.sendFile(path.join(__dirname, "styles.css"));
+});
+app.get("/landing.css", (req, res) => {
+  res.type("text/css");
+  res.sendFile(path.join(__dirname, "landing.css"));
+});
+app.get("/tokens.css", (req, res) => {
+  res.type("text/css");
+  res.sendFile(path.join(__dirname, "tokens.css"));
+});
+app.get("/base.css", (req, res) => {
+  res.type("text/css");
+  res.sendFile(path.join(__dirname, "base.css"));
 });
 app.get("/app.js", (req, res) => {
   res.type("application/javascript");
@@ -2770,5 +2831,8 @@ app.use(express.static(path.join(__dirname, "public")));
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`server running on port ${PORT}`);
+  if (FIREBASE_DISABLED) {
+    console.log("firebase disabled (FIREBASE_DISABLED=1) — serving without live rtdb");
+  }
 });
 

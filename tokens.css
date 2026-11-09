@@ -1,0 +1,44 @@
+:root {
+  --space-3xs: 2px; --space-2xs: 4px; --space-xs: 8px; --space-sm: 12px; --space-md: 16px; --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px; --space-3xl: 96px; --space-4xl: 144px;
+  --text-xs: 0.8125rem; --text-sm: 0.875rem; --text-md: 1rem; --text-lg: 1.25rem; --text-xl: 1.5625rem; --text-2xl: 1.953rem; --text-3xl: 2.441rem;
+  --text-display-s: clamp(2rem, 3vw + 0.5rem, 3rem); --text-display: clamp(2.25rem, 3.5vw + 0.75rem, 3.5rem);
+  --text-section: clamp(1.5rem, 1.5vw + 1rem, 2rem); --text-title: clamp(1.125rem, 0.5vw + 0.95rem, 1.375rem); --text-lead: clamp(1rem, 0.25vw + 0.95rem, 1.2rem);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1); --ease-in: cubic-bezier(0.7, 0, 0.84, 0); --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms; --dur-short: 220ms; --dur-long: 420ms;
+  --color-error: oklch(58% 0.16 25); --color-success: oklch(62% 0.12 150);
+  --container: 1100px; --gutter: 24px; --gap-columns: 20px; --section-gap-s: 48px; --section-gap: 64px; --section-gap-l: 96px;
+  --z-base: 1; --z-raised: 10; --z-dropdown: 100; --z-sticky: 200; --z-sticky-nav: 300; --z-modal: 400; --z-toast: 500; --z-tooltip: 600;
+
+  /* softer osu!-leaning dusk: lifted paper, pastel pink, gentle chrome */
+  --osu-hue: 320;
+  --osu-pink-hue: 340;
+  --color-paper: oklch(28% 0.02 310);
+  --color-paper-2: oklch(34% 0.022 320);
+  --color-paper-3: oklch(40% 0.024 330);
+  --color-chrome: oklch(44% 0.018 320);
+  --color-chrome-2: oklch(40% 0.02 325);
+  --color-ink: oklch(96% 0.01 330);
+  --color-ink-2: oklch(86% 0.02 330);
+  --color-muted: oklch(72% 0.02 320);
+  --color-rule: oklch(52% 0.02 320);
+  --color-accent: oklch(78% 0.12 350);
+  --color-accent-link: oklch(82% 0.12 350);
+  --color-accent-2: oklch(72% 0.08 230);
+  --color-accent-3: oklch(78% 0.1 70);
+  --color-accent-ink: oklch(28% 0.04 340);
+  --color-focus: oklch(82% 0.1 350);
+  --color-warn: oklch(82% 0.08 55);
+  --color-warn-ink: oklch(32% 0.04 55);
+  --color-shade: oklch(22% 0.02 310);
+
+  --font-display: "Exo 2", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-outlier: var(--font-body);
+  --display-weight: 700;
+  --radius-card: 12px;
+  --radius-pill: 999px;
+  --radius-input: 8px;
+  --rule-hair: 1px;
+  --shadow-card: 0 8px 28px color-mix(in oklab, var(--color-shade) 35%, transparent);
+  --tracking-display: -0.02em;
+}

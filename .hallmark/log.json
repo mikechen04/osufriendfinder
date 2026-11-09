@@ -1,0 +1,58 @@
+[
+ {
+  "mode": "redesign",
+  "depth": "full",
+  "scope": "page",
+  "shape": "Workbench",
+  "theme": "brand",
+  "axes": "dark/geometric-sans/chromatic-pink",
+  "hero": "Settled",
+  "nav": "osu top bar",
+  "footer": "legal strip",
+  "imagery": "words",
+  "photos": [],
+  "entry": "osu dashboard shell landing",
+  "fingerprint": "workbench-settled-brand-osu",
+  "sections": [
+   "hero",
+   "cool stuff feed",
+   "offline notice",
+   "footer"
+  ],
+  "signature": "offline notice + pink/blue CTA stack",
+  "waived": [
+   "8",
+   "44c",
+   "79"
+  ],
+  "prompt": "landing for offline osu friend-finder structured like osu dashboard",
+  "date": "2026-11-08"
+ },
+ {
+  "mode": "redesign",
+  "depth": "full",
+  "scope": "page",
+  "shape": "Archive Board",
+  "theme": "brand",
+  "axes": "dark/rounded-sans/chromatic-magenta",
+  "hero": "Settled",
+  "nav": "edge wordmark",
+  "footer": "legal strip",
+  "imagery": "words",
+  "photos": [],
+  "entry": "landing archive board",
+  "fingerprint": "archive-board-settled-brand-dark",
+  "sections": [
+   "hero",
+   "cool stuff feed",
+   "offline notice",
+   "footer"
+  ],
+  "signature": "offline thanks + loud 18+ gate",
+  "waived": [
+   "8"
+  ],
+  "prompt": "landing for offline osu friend-finder, dark ground, pink brand",
+  "date": "2026-11-09"
+ }
+]

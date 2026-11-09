@@ -1,0 +1,14 @@
+{
+  "scanned": "2026-11-08",
+  "findings": {
+    "fonts": "Nunito via Google Fonts (index.html L21-24, tokens.css --font-display/--font-body)",
+    "palette": "OKLCH tokens in tokens.css (paper/ink/accent magenta on dark); Hallmark brand redesign stamp on landing.css",
+    "motion": "CSS transitions/transforms in landing.css + base.css; prefers-reduced-motion in base",
+    "spacing": "Hallmark --space-* and --container in tokens.css",
+    "framework": "Express 5 + EJS (package.json); static index.html landing + views/pages/*.ejs app screens; landing.css / styles.css",
+    "brand": "circle! e-friend finder wordmark; dark paper + magenta accent (brand redesign); no design.md",
+    "product": "osu! OAuth social/dating app; routes in server.js; landing is index.html on /"
+  },
+  "preserve": ["Nunito", "brand tokens", "circle! wordmark", "all links/forms/handlers"],
+  "introduce": []
+}
